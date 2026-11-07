@@ -56,6 +56,7 @@ fn imports_and_sr_round_trip() {
                 scan_sync: true,
                 profiles_dir: None,
                 extra_builtin_profiles: Vec::new(),
+                mock_decoders: cfg!(feature = "mock"),
             },
         )
     });

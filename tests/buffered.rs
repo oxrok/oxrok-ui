@@ -42,6 +42,7 @@ fn rig_with(rle_max_rate: Option<u64>) -> (Harness<'static, LaApp>, ManualClock)
                 scan_sync: true,
                 profiles_dir: None,
                 extra_builtin_profiles: Vec::new(),
+                mock_decoders: cfg!(feature = "mock"),
             },
         )
     });

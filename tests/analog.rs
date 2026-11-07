@@ -36,6 +36,7 @@ fn rig(export_dir: Option<PathBuf>) -> Rig {
                 scan_sync: true,
                 profiles_dir: None,
                 extra_builtin_profiles: Vec::new(),
+                mock_decoders: cfg!(feature = "mock"),
             },
         )
     });

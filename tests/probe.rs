@@ -41,6 +41,7 @@ fn harness(dir: &Path, builtins: Vec<String>) -> Harness<'static, LaApp> {
                 scan_sync: true,
                 profiles_dir: Some(dir),
                 extra_builtin_profiles: builtins,
+                mock_decoders: cfg!(feature = "mock"),
             },
         )
     })

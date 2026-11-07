@@ -28,6 +28,7 @@ fn harness(dir: Option<PathBuf>) -> Harness<'static, LaApp> {
                 scan_sync: true,
                 profiles_dir: None,
                 extra_builtin_profiles: Vec::new(),
+                mock_decoders: cfg!(feature = "mock"),
             },
         )
     });

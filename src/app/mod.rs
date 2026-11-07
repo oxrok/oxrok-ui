@@ -49,11 +49,6 @@ pub const APP_NAME: &str = "Oxrok UI";
 
 /// The decoder library this build uses.
 pub(crate) fn decoder_library() -> String {
-    #[cfg(feature = "mock")]
-    {
-        "built-in decoders".to_owned()
-    }
-    #[cfg(not(feature = "mock"))]
     format!("{} (RustPython)", crate::oxrok::library_info())
 }
 /// The least memory a later Repeat round records into, in MB.
@@ -80,6 +75,9 @@ pub struct AppOptions {
     pub profiles_dir: Option<PathBuf>,
     /// Extra built-in profiles as JSON (tests).
     pub extra_builtin_profiles: Vec<String>,
+    /// The small, predictable mock decoders instead of oxrok's library
+    /// (tests; needs the `mock` feature, ignored without it).
+    pub mock_decoders: bool,
 }
 
 /// Results from background jobs.
@@ -332,15 +330,16 @@ pub fn buffered_trigger_plan(pre: f64, post: f64, rate: u64) -> (u64, u8) {
     (need_post.max(need_pre) as u64, ratio as u8)
 }
 
-/// The decoder library: the mock decoders with the `mock` feature,
-/// otherwise oxrok. `extra` is the user's additional decoder directory.
-fn decoder_engine(extra: Option<PathBuf>) -> Result<Box<dyn crate::decode::DecoderEngine>, String> {
+/// The decoder library: oxrok, or the mock decoders when `mock` is set
+/// (tests, with the `mock` feature). `extra` is the user's additional
+/// decoder directory.
+fn decoder_engine(extra: Option<PathBuf>, mock: bool) -> Result<Box<dyn crate::decode::DecoderEngine>, String> {
     #[cfg(feature = "mock")]
-    {
-        let _ = extra;
-        Ok(Box::new(crate::decode::mock::MockEngine::new()))
+    if mock {
+        return Ok(Box::new(crate::decode::mock::MockEngine::new()));
     }
     #[cfg(not(feature = "mock"))]
+    let _ = mock;
     match crate::oxrok::OxrokDecoders::new(extra.as_deref()) {
         Ok(e) => {
             eprintln!(
@@ -419,6 +418,7 @@ impl LaApp {
                 scan_sync: false,
                 profiles_dir: profiles::default_dir(),
                 extra_builtin_profiles: Vec::new(),
+                mock_decoders: false,
             },
         );
         // The native macOS menu, in the real app only.
@@ -455,6 +455,7 @@ impl LaApp {
                 scan_sync: true,
                 profiles_dir: None,
                 extra_builtin_profiles: Vec::new(),
+                mock_decoders: true,
             },
         )
     }
@@ -474,7 +475,8 @@ impl LaApp {
         let mut app = Self {
             decode: {
                 let extra = settings.decoders.extra_dir.clone();
-                crate::decode::runner::DecodeService::spawn(move || decoder_engine(extra))
+                let mock = o.mock_decoders;
+                crate::decode::runner::DecodeService::spawn(move || decoder_engine(extra, mock))
             },
             backend: o.backend,
             clock: o.clock,

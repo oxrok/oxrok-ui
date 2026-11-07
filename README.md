@@ -7,18 +7,19 @@ with oxrok.
 
 ## Install
 
-While only prerelease versions are published, the version must be given
-explicitly (cargo never matches prereleases with `*`):
-
 ```sh
-cargo install oxrok-ui --version 0.2.0-alpha.1
+cargo install --locked oxrok-ui --version 0.2.0-alpha.1
 ```
 
 To try it without hardware, install with the built-in mock devices:
 
 ```sh
-cargo install --features mock oxrok-ui --version 0.2.0-alpha.1
+cargo install --locked --features mock oxrok-ui --version 0.2.0-alpha.1
 ```
+
+`--locked` builds with the tested dependency versions; without it, a
+newer transitive dependency of RustPython breaks the build. `--version`
+is needed while only prereleases are published.
 
 Prebuilt binaries for macOS, Linux and Windows: see [Packages](#packages).
 

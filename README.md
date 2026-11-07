@@ -7,14 +7,17 @@ with oxrok.
 
 ## Install
 
+While only prerelease versions are published, the version must be given
+explicitly (cargo never matches prereleases with `*`):
+
 ```sh
-cargo install oxrok-ui
+cargo install oxrok-ui --version 0.2.0-alpha.1
 ```
 
 To try it without hardware, install with the built-in mock devices:
 
 ```sh
-cargo install --features mock oxrok-ui
+cargo install --features mock oxrok-ui --version 0.2.0-alpha.1
 ```
 
 Prebuilt binaries for macOS, Linux and Windows: see [Packages](#packages).

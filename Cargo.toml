@@ -6,8 +6,9 @@ rust-version = "1.95"
 # Decided 2026-10-19: GPL-3.0-or-later, matching the sigrok stack it ports.
 # Full text in LICENSE.
 license = "GPL-3.0-or-later"
-publish = false
 description = "A Rust/egui logic analyzer, built on oxrok"
+repository = "https://github.com/oxrok/ui"
+homepage = "https://github.com/oxrok/ui"
 
 [lib]
 path = "src/lib.rs"

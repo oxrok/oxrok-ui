@@ -5,6 +5,20 @@ A Rust/egui frontend for
 measurement and decoding UI for oxrok devices. `0.2.0-alpha.1`, aligned
 with oxrok.
 
+## Install
+
+```sh
+cargo install oxrok-ui
+```
+
+To try it without hardware, install with the built-in mock devices:
+
+```sh
+cargo install --features mock oxrok-ui
+```
+
+Prebuilt binaries for macOS, Linux and Windows: see [Packages](#packages).
+
 ## Screenshots
 
 The capture view, zoomed to a 2 ms window:

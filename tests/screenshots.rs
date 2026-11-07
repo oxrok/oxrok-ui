@@ -154,29 +154,31 @@ fn readme_screenshots() {
         }
         h.run_steps(3);
     };
-    let below = h.get_by_role_and_label(egui::Role::Label, "A0").rect().bottom() + 60.0;
+    // The clicks and the drag must land inside the plot (the label
+    // column ends at about x 490); a click outside cancels placement.
+    let a0 = h.get_by_role_and_label(egui::Role::Label, "A0").rect().center().y;
     h.key_press_modifiers(egui::Modifiers::SHIFT, Key::M);
     h.run_steps(2);
-    click(&mut h, egui::pos2(160.0, below));
-    click(&mut h, egui::pos2(560.0, below));
+    click(&mut h, egui::pos2(700.0, a0));
+    click(&mut h, egui::pos2(1050.0, a0));
     h.get_by_role_and_label(egui::Role::Button, "Markers").click();
     h.run_steps(4);
     h.key_press(Key::R);
     h.run_steps(2);
     let clk = h.get_by_role_and_label(egui::Role::Label, "D0 CLK").rect().center().y;
-    h.hover_at(egui::pos2(300.0, clk));
+    h.hover_at(egui::pos2(650.0, clk));
     h.event(egui::Event::PointerButton {
-        pos: egui::pos2(300.0, clk),
+        pos: egui::pos2(650.0, clk),
         button: egui::PointerButton::Primary,
         pressed: true,
         modifiers: egui::Modifiers::NONE,
     });
     h.run_steps(2);
     for k in 1..=6 {
-        h.hover_at(egui::pos2(300.0 + 70.0 * k as f32, clk));
+        h.hover_at(egui::pos2(650.0 + 50.0 * k as f32, clk));
         h.run_steps(2);
     }
-    h.drop_at(egui::pos2(720.0, clk));
+    h.drop_at(egui::pos2(950.0, clk));
     h.run_steps(4);
     h.remove_cursor();
     h.run_steps(4);

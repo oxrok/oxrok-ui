@@ -1,25 +1,13 @@
 # Oxrok UI
 
-A Rust/egui logic analyzer, built on
-[oxrok](https://github.com/oxrok/oxrok).
-
-**Status:** `0.2.0-alpha.1`, aligned with oxrok. The app captures
-digital and analog signals from an [oxrok](https://github.com/oxrok/oxrok)
-device or the demo device, in Trigger, Timed or Continuous mode (edge and
-pulse triggers, hardware or software). It shows them with zoom, pan, range
-zoom, view history, jump to time, edge navigation and hover readouts.
-Timing markers and range measurements measure them precisely. Protocol
-analyzers decode them into bubbles, a searchable data table and a
-terminal; oxrok's native `uart`, `i2c` and `spi` decoders come first, the
-libsigrokdecode Python decoders run on RustPython. Rows can be renamed,
-reordered, hidden, recolored and resized. It exports CSV. Dark and light
-themes.
+A Rust/egui frontend for
+[oxrok](https://github.com/oxrok/oxrok): the capture, display,
+measurement and decoding UI for oxrok devices. `0.2.0-alpha.1`, aligned
+with oxrok.
 
 ## Screenshots
 
-A 2 s capture from the demo device: a 1 kHz clock (D0), a UART frame (D1),
-SPI chip select, clock and data (D2–D4), and a 1 kHz sine (A0), zoomed to
-the first 2 ms.
+The capture view, zoomed to a 2 ms window:
 
 ![Capture](docs/screenshots/capture.png)
 
@@ -27,22 +15,21 @@ The same in the light theme (View → Theme):
 
 ![Capture, light theme](docs/screenshots/capture-light.png)
 
-Rows renamed inline, with the row context menu and its *Show/Hide
-Channels* submenu:
+The row context menu, with inline-renamed rows:
 
 ![Row menu](docs/screenshots/row-menu.png)
 
-The zoom tool menu: range zoom modes and *Zoom relative to*:
+The zoom tool: range zoom modes and *Zoom relative to*:
 
 ![Zoom tool](docs/screenshots/zoom-tool.png)
 
-Async Serial and SPI analyzers: bubbles above their channels and the
-data table:
+Protocol analyzers: bubbles above their channels and the searchable data
+table:
 
 ![Analyzers](docs/screenshots/analyzers.png)
 
-A marker pair with the Timing Markers panel, and a range measurement on
-the clock with its metrics popup:
+A marker pair, a range measurement with its metrics popup, and the Timing
+Markers panel:
 
 ![Markers and measurements](docs/screenshots/markers.png)
 
@@ -104,60 +91,13 @@ make run                           # the app on oxrok (release; PROFILE=dev for 
 
 ## Using it
 
-| Action | How |
-|---|---|
-| Open a device | Start screen cards, or the **Devices** menu (bottom left) → *New Session* |
-| Sessions | the session button (bottom bar): switch, rename (double-click), reorder (drag) and close; `Ctrl/Cmd+T` new, `Ctrl/Cmd+W` close, `Ctrl+Tab` next, `Ctrl/Cmd+1…9` |
-| Choose channels, sample rate, mode, memory buffer | **Device Settings** panel (right rail) |
-| Logic threshold, driver options | Device Settings → **Logic threshold**, **Device options** |
-| The same capture as an `oxrok` command | Device Settings → **Command line** → Copy, or *Capture → Copy oxrok Command* |
-| Start / stop recording | `Space` (or `Ctrl/Cmd+R`) or the ▶ / ■ toolbar button; *Timed* mode stops by itself |
-| Follow live data | the **Live** chip while recording |
-| Zoom | mouse wheel (about the pointer), `=`/`↑` and `-`/`↓` (`Shift+↑` zooms fully in), the zoom button (bottom right) |
-| Pan | drag, touchpad swipe, `←` / `→` (with `Shift` a whole page), the scrollbar |
-| Zoom to a range | `Ctrl/Cmd+Shift`+drag, `Ctrl/Cmd`+drag (XY), or the zoom tool (toolbar) |
-| Zoom in about a point | double-click |
-| Previous / next view | ‹ › toolbar buttons, `Alt+←/→` (macOS also `Cmd+[` / `Cmd+]`) |
-| Jump to a time | `G` |
-| Previous / next edge | buttons at the plot edges of the hovered row, `,` / `.` |
-| Previous / next decoded result | the round buttons at the lane ends, `<` / `>` on the hovered row |
-| Fit all data | `F` |
-| Jump to start / end | `Home` / `End` |
-| Scroll rows | wheel over the channel names, `PageUp` / `PageDown` |
-| Analog: zoom / pan the value axis | `Ctrl/Cmd` + wheel or wheel over the scale labels; vertical drag; `Ctrl/Cmd+↑/↓` |
-| Analog: fit the visible data | `Y` (`Shift+Y` for all) or the Y Fit button (top right of the row) |
-| Measure a pulse / read a value | hover a digital / analog row |
-| Light / dark theme | View → Theme, or the palette |
-| Run any command | `Ctrl/Cmd+K` (command palette), or the menu bar |
-| Settings | `Ctrl/Cmd+,` (theme, UI scale, folders, …); UI size `Ctrl/Cmd+=` / `-` / `0` |
-| Name a device | Device Settings → Device Information → Name |
-| Resize a row | drag its bottom border in the label column |
-| Rename / reorder a row | click its name / drag its label |
-| Hide, recolor, fit rows, Auto Layout | right-click a row |
-| Resize the label column | drag its right edge (to the left to collapse it) |
-| Probe wire and marker colors | **Probe Colors…** in Device Settings; profiles are JSON in `<config>/logic-analyzer/probe-profiles/` |
-| Timing markers | `M` (single), `Shift+M` (pair), or the toolbar flag; drag heads, right-click for more |
-| Measure a range | `R`, the toolbar bracket, or `Shift`+drag on a row |
-| Time origin | right-click the time ruler |
-| Delete selected markers / ranges | `Delete`, `Backspace` |
-| Trigger on an edge or pulse | Device Settings → **Trigger**; `T` centers the trigger |
-| Capture again and again | the **Repeat** toggle next to ▶ (Trigger mode) |
-| Decode a protocol | the toolbar hexagon or the Analyzers panel; bubbles appear above the channel |
-| Browse decoded data | the Analyzers panel: table (search, go to, `Ctrl/Cmd+C`) or terminal |
-| Save / Save As | `Ctrl/Cmd+S` / `Ctrl/Cmd+Shift+S` (`.oxrok`; `•` in the title means unsaved) |
-| Open a capture | `Ctrl/Cmd+O`, drag and drop, or Recent on the start screen; `.oxrok`, and with oxrok `.sr`, VCD and raw binary |
-| Export (CSV, Binary, VCD, sigrok .sr) | `Ctrl/Cmd+E`, or *Export Range…* on a range measurement |
-| Delete data outside a range | right-click a row, the ruler, a marker or the trigger → **Delete Data** |
-| Capture notes | the Notes panel (`Alt+5`) |
-| Open a sidebar panel | the right rail, or `Alt+1` … `Alt+5` |
-| All keyboard shortcuts | `?` (with search) |
-
-The app needs no C library and no Python at build or run time. To give it
-the libsigrokdecode Python decoders, install them (`brew install
-libsigrokdecode` on macOS, the distribution's package on Linux) or point
-`OXROK_DECODERS_DIR` at a checkout's `decoders/` directory. `make
-firmware-deps` fetches the open firmware and the firmware extraction
-scripts.
+- Open a device: the start screen, or the **Devices** menu → *New Session*
+- Record: `Space`; *Timed* mode stops by itself
+- Zoom / pan: wheel, drag, `=`/`-`, the zoom tool
+- Markers and measurements: `M`, `Shift+M`, `R`
+- Decode a protocol: the toolbar hexagon or the Analyzers panel
+- Save / open: `Ctrl/Cmd+S` / `Ctrl/Cmd+O` (`.oxrok`)
+- All shortcuts: `?` (with search); any command: `Ctrl/Cmd+K`
 
 To update UI snapshots, run `UPDATE_SNAPSHOTS=1 cargo test --features mock`.
 

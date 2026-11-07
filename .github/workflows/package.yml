@@ -1,0 +1,103 @@
+# 22 Packaging: builds the installers on demand (Actions → Package → Run
+# workflow). Each job runs the app's --self-test on the result and
+# uploads it as an artifact.
+name: Package
+
+on:
+  workflow_dispatch:
+    inputs:
+      macos:
+        description: macOS .app / .dmg (ad-hoc signed)
+        type: boolean
+        default: true
+      linux:
+        description: Linux AppImage
+        type: boolean
+        default: true
+      windows:
+        description: Windows installer
+        type: boolean
+        default: true
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  macos:
+    if: inputs.macos
+    runs-on: macos-14
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - run: brew install libsigrokdecode
+      - run: make firmware-deps
+      - run: make bundle
+      - uses: actions/upload-artifact@v4
+        with:
+          name: macos
+          path: dist/*.dmg
+
+  linux:
+    if: inputs.linux
+    # The oldest supported runner, so the AppImage runs on older glibc.
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - name: Dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libsigrokdecode4 \
+            libxkbcommon-dev libwayland-dev libxcb-render0-dev libxcb-shape0-dev libxcb-xfixes0-dev \
+            file desktop-file-utils
+          wget -q https://github.com/AppImage/appimagetool/releases/download/continuous/appimagetool-x86_64.AppImage \
+            -O /usr/local/bin/appimagetool
+          chmod +x /usr/local/bin/appimagetool
+      - run: make firmware-deps
+      - run: cargo build --release
+      - name: AppImage
+        env:
+          APPIMAGE_EXTRACT_AND_RUN: "1"
+        run: |
+          VERSION=$(sed -n 's/^version = "\(.*\)"/\1/p' Cargo.toml | head -1)
+          packaging/linux/appimage.sh target/release/oxrok-ui "$VERSION" dist
+      - name: Self-test
+        env:
+          APPIMAGE_EXTRACT_AND_RUN: "1"
+        run: dist/*.AppImage --self-test
+      - uses: actions/upload-artifact@v4
+        with:
+          name: linux
+          path: dist/*.AppImage
+
+  windows:
+    if: inputs.windows
+    runs-on: windows-latest
+    defaults:
+      run:
+        shell: msys2 {0}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: msys2/setup-msys2@v2
+        with:
+          msystem: MINGW64
+          update: true
+          install: >-
+            git make curl tar
+            mingw-w64-x86_64-rust mingw-w64-x86_64-clang mingw-w64-x86_64-pkgconf
+            mingw-w64-x86_64-libsigrokdecode
+      - name: Inno Setup
+        shell: pwsh
+        run: choco install innosetup --no-progress -y
+      - run: make firmware-deps
+      - name: Build, self-test and installer
+        run: |
+          export PATH="$PATH:/c/Program Files (x86)/Inno Setup 6"
+          VERSION=$(sed -n 's/^version = "\(.*\)"/\1/p' Cargo.toml | head -1)
+          packaging/windows/build.sh "$VERSION" dist
+      - uses: actions/upload-artifact@v4
+        with:
+          name: windows
+          path: dist/*-setup.exe

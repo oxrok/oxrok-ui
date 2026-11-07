@@ -1,0 +1,8 @@
+# Copy to local.mk (ignored by git) and adjust.
+
+# The bench checkout: the ESP32 signal generator firmware lives under it
+# (esp32/siggen). Only `make siggen-flash` and `make test-hil` need it.
+# BENCH = /path/to/driver-checkout
+
+# The firmware folder for `make siggen-flash`, if it is somewhere else:
+# SIGGEN_FW = /path/to/esp32/siggen

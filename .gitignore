@@ -1,0 +1,10 @@
+/target
+**/*.new.png
+**/*.diff.png
+.DS_Store
+**/*.old.png
+local.mk
+# make firmware-deps
+/vendor/
+# make bundle
+/dist/

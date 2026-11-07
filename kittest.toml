@@ -1,0 +1,14 @@
+# egui_kittest snapshot settings.
+# Snapshots are generated on macOS; other platforms rasterize fonts slightly
+# differently, so they get a small pixel budget.
+output_path = "tests/snapshots"
+threshold = 0.6
+max_failed_pixels = 0
+
+[linux]
+threshold = 0.6
+max_failed_pixels = 400
+
+[windows]
+threshold = 0.6
+max_failed_pixels = 400

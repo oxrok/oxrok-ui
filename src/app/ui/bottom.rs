@@ -72,9 +72,9 @@ impl LaApp {
         let devices = self.devices.clone().unwrap_or_default();
         let physical = devices.iter().filter(|d| !d.is_demo).count();
         let label = match physical {
-            0 => "Disconnected".to_owned(),
-            1 => "1 Device".to_owned(),
-            n => format!("{n} Devices"),
+            0 => crate::l10n::tr("Disconnected").to_owned(),
+            1 => crate::l10n::tr("1 Device").to_owned(),
+            n => crate::l10n::tr("{} Devices").replacen("{}", &n.to_string(), 1),
         };
         let icon: Option<fn(&egui::Painter, Rect, egui::Color32)> =
             (physical > 0).then_some(icons::device as fn(&_, _, _));

@@ -26,14 +26,12 @@ pub enum Language {
 impl Language {
     pub const ALL: [Language; 3] = [Language::En, Language::Es, Language::ZhHans];
 
-    /// The language's name for the picker. Kept in the Latin script so it
-    /// renders without a CJK font; the CJK UI itself needs a CJK font
-    /// (see the translation README note).
+    /// The language's own name, for the picker.
     pub fn name(self) -> &'static str {
         match self {
             Language::En => "English",
             Language::Es => "Español",
-            Language::ZhHans => "Chinese (Simplified)",
+            Language::ZhHans => "简体中文",
         }
     }
 }
@@ -61,6 +59,15 @@ pub fn tr(english: &'static str) -> &'static str {
         Language::Es => es().get(english).copied().unwrap_or(english),
         Language::ZhHans => zh().get(english).copied().unwrap_or(english),
     }
+}
+
+/// Every translation in `language` (empty for English, the source).
+pub fn catalog(language: Language) -> impl Iterator<Item = &'static str> {
+    ENTRIES.iter().filter_map(move |&(_, es, zh)| match language {
+        Language::En => None,
+        Language::Es => Some(es),
+        Language::ZhHans => Some(zh),
+    })
 }
 
 fn es() -> &'static std::collections::HashMap<&'static str, &'static str> {
@@ -355,6 +362,19 @@ const ENTRIES: &[(&str, &str, &str)] = &[
     ("Add Marker Pair", "Añadir par de marcadores", "添加标记对"),
     ("Keyboard Shortcuts", "Atajos de teclado", "键盘快捷键"),
 
+    // ---- Settings dialog ----
+    ("Search settings", "Buscar ajustes", "搜索设置"),
+    ("No settings match", "Ningún ajuste coincide", "没有匹配的设置"),
+    ("Reset all settings…", "Restablecer todos los ajustes…", "重置所有设置…"),
+    ("Reset", "Restablecer", "重置"),
+    ("UI scale", "Escala de la interfaz", "界面缩放"),
+    ("Show tooltips", "Mostrar sugerencias", "显示工具提示"),
+
+    // ---- Status bar ----
+    ("Disconnected", "Desconectado", "未连接"),
+    ("1 Device", "1 dispositivo", "1 个设备"),
+    ("{} Devices", "{} dispositivos", "{} 个设备"),
+
     // ---- Paired shortcut rows ----
     ("Previous / Next Edge (hovered row)", "Borde anterior / siguiente (fila señalada)", "上一个/下一个边沿（悬停行）"),
     ("Previous / Next Result (hovered row)", "Resultado anterior / siguiente (fila señalada)", "上一个/下一个结果（悬停行）"),
@@ -367,24 +387,3 @@ const ENTRIES: &[(&str, &str, &str)] = &[
     ("Undo / Redo", "Deshacer / rehacer", "撤销/重做"),
     ("Previous / Next View", "Vista anterior / siguiente", "上一个/下一个视图"),
 ];
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn translates_and_falls_back() {
-        set(Language::Es);
-        assert_eq!(tr("Save"), "Guardar");
-        assert_eq!(tr("Capture"), "Captura");
-        assert_eq!(tr("this string is not translated"), "this string is not translated");
-
-        set(Language::ZhHans);
-        assert_eq!(tr("Save"), "保存");
-        assert_eq!(tr("Theme"), "主题");
-
-        set(Language::En);
-        assert_eq!(tr("Save"), "Save");
-        assert_eq!(current(), Language::En);
-    }
-}

@@ -1,6 +1,7 @@
 //! Start screen.
 
 use crate::app::LaApp;
+use crate::l10n::tr;
 use crate::ui::Token;
 use crate::ui::icons;
 use crate::ui::theme::ThemeExt;
@@ -90,7 +91,7 @@ impl LaApp {
                 );
                 ui.add_space(2.0);
                 if let Some(url) = super::help::project_url() {
-                    let labels = ["Release Notes", "User Guide", "Report Issue"];
+                    let labels = [tr("Release Notes"), tr("User Guide"), tr("Report Issue")];
                     let width = |ui: &Ui, t: &str| {
                         ui.painter()
                             .layout_no_wrap(t.to_owned(), Text::Caption.font_id(), egui::Color32::WHITE)
@@ -112,11 +113,11 @@ impl LaApp {
                                     href,
                                 ));
                             };
-                            link(ui, "Release Notes", format!("{url}/releases"));
+                            link(ui, tr("Release Notes"), format!("{url}/releases"));
                             dotted(ui, &theme);
-                            link(ui, "User Guide", format!("{url}/wiki"));
+                            link(ui, tr("User Guide"), format!("{url}/wiki"));
                             dotted(ui, &theme);
-                            link(ui, "Report Issue", format!("{url}/issues"));
+                            link(ui, tr("Report Issue"), format!("{url}/issues"));
                         },
                     );
                 }
@@ -128,16 +129,16 @@ impl LaApp {
             ui.scope_builder(
                 UiBuilder::new().max_rect(card.shrink(24.0)).layout(Layout::top_down(egui::Align::Center)),
                 |ui| {
-                    title(ui, "Devices");
+                    title(ui, tr("Devices"));
                     illustration(ui, ART_H / 0.4, icons::device);
                     if devices.is_empty() {
                         let text = if self.devices.is_none() {
-                            "Scanning for devices…".to_owned()
+                            tr("Scanning for devices…").to_owned()
                         } else {
-                            format!("No device found. Supported devices include {FAMILIES}")
+                            tr("No device found. Supported devices include {}").replacen("{}", FAMILIES, 1)
                         };
                         ui.label(egui::RichText::new(text).color(theme.color(Token::Ink3)));
-                        if self.devices.is_some() && ui.link("Device Connection Help…").clicked() {
+                        if self.devices.is_some() && ui.link(tr("Device Connection Help…")).clicked() {
                             help = true;
                         }
                         return;
@@ -165,15 +166,17 @@ impl LaApp {
             let content = ui.scope_builder(
                 UiBuilder::new().max_rect(load.shrink2(vec2(24.0, 16.0))).layout(Layout::top_down(egui::Align::Center)),
                 |ui| {
-                    title(ui, "Load a Capture File");
+                    title(ui, tr("Load a Capture File"));
                     ui.add_space(12.0);
                     let row = vec2(ui.available_width(), 40.0);
                     ui.allocate_ui_with_layout(row, Layout::left_to_right(egui::Align::Center), |ui| {
                         let text_w = 260.0;
                         let button_w = 270.0;
                         ui.add_space(((ui.available_width() - text_w - button_w) / 2.0).max(0.0));
-                        ui.label(egui::RichText::new("↓ Drag and drop a file here or").color(theme.color(Token::Ink3)));
-                        if ui.add(Button::primary("Choose a file from your computer")).clicked() {
+                        ui.label(
+                            egui::RichText::new(tr("↓ Drag and drop a file here or")).color(theme.color(Token::Ink3)),
+                        );
+                        if ui.add(Button::primary(tr("Choose a file from your computer"))).clicked() {
                             choose = true;
                         }
                     });
@@ -186,7 +189,7 @@ impl LaApp {
                             ui.painter().text(
                                 pos2(head.left(), head.center().y),
                                 egui::Align2::LEFT_CENTER,
-                                "Recent",
+                                tr("Recent"),
                                 Text::CaptionBold.font_id(),
                                 theme.color(Token::Ink3),
                             );
@@ -232,9 +235,13 @@ impl LaApp {
         let decoders = self.decode.decoders().and_then(Result::ok).map_or(0, |d| d.len());
         match self.backend.library_version() {
             Some(lib) => {
-                format!("{} {} · {} · {decoders} decoders", crate::app::APP_NAME, env!("CARGO_PKG_VERSION"), lib)
+                let decoders = tr("{} decoders").replacen("{}", &decoders.to_string(), 1);
+                format!("{} {} · {} · {decoders}", crate::app::APP_NAME, env!("CARGO_PKG_VERSION"), lib)
             }
-            None => format!("{} {} · {decoders} decoders", crate::app::APP_NAME, env!("CARGO_PKG_VERSION")),
+            None => {
+                let decoders = tr("{} decoders").replacen("{}", &decoders.to_string(), 1);
+                format!("{} {} · {decoders}", crate::app::APP_NAME, env!("CARGO_PKG_VERSION"))
+            }
         }
     }
 }

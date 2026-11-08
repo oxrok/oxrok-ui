@@ -9,6 +9,7 @@ use crate::core::ChannelId;
 use crate::core::capture::CaptureMode;
 use crate::decode::runner::Status;
 use crate::decode::{ANALYZER_PALETTE, DecOption, DecoderInfo, OptionValue, Radix, SUGGESTED, default_visible_rows};
+use crate::l10n::tr;
 use crate::ui::Token;
 use crate::ui::icons;
 use crate::ui::theme::ThemeExt;
@@ -164,14 +165,16 @@ impl AnalyzerDialog {
                 OptField::Text(t) => {
                     let t = t.trim();
                     match &o.default {
-                        OptionValue::Int(_) if t.is_empty() => return Err(("Required".into(), o.id.clone())),
+                        OptionValue::Int(_) if t.is_empty() => {
+                            return Err((tr("Required").into(), o.id.clone()));
+                        }
                         OptionValue::Int(_) => match t.parse::<i64>() {
                             Ok(i) => OptionValue::Int(i),
-                            Err(_) => return Err(("Must be an integer".into(), o.id.clone())),
+                            Err(_) => return Err((tr("Must be an integer").into(), o.id.clone())),
                         },
                         OptionValue::Float(_) => match t.parse::<f64>() {
                             Ok(x) => OptionValue::Float(x),
-                            Err(_) => return Err(("Must be a number".into(), o.id.clone())),
+                            Err(_) => return Err((tr("Must be a number").into(), o.id.clone())),
                         },
                         OptionValue::Str(_) => OptionValue::Str(t.to_owned()),
                     }
@@ -220,7 +223,7 @@ impl LaApp {
     /// No edits while recording.
     fn analyzers_locked(&mut self) -> bool {
         if self.session.as_ref().is_some_and(|s| s.state.is_busy()) {
-            self.toast(Toast::new(ToastKind::Warning, "Analyzers can't be edited while recording"));
+            self.toast(Toast::new(ToastKind::Warning, tr("Analyzers can't be edited while recording")));
             return true;
         }
         false
@@ -257,16 +260,18 @@ impl LaApp {
                     ui.add_space(10.0);
                     let (r, _) = ui.allocate_exact_size(vec2(14.0, 14.0), Sense::hover());
                     icons::zoom_x(ui.painter(), r, theme.color(Token::Ink3));
-                    let edit =
-                        ui.add(egui::TextEdit::singleline(&mut new_filter).hint_text("Filter").desired_width(220.0));
-                    super::label_text_edit(&edit, &new_filter, "Filter analyzers");
+                    let edit = ui
+                        .add(egui::TextEdit::singleline(&mut new_filter).hint_text(tr("Filter")).desired_width(220.0));
+                    super::label_text_edit(&edit, &new_filter, tr("Filter analyzers"));
                     if !was_open || !ui.memory(|m| m.has_focus(edit.id)) && ui.memory(|m| m.focused().is_none()) {
                         edit.request_focus();
                     }
                 });
                 menu_separator(ui);
                 if loading {
-                    ui.label(egui::RichText::new("  Loading decoders…").color(theme.color(Token::Ink3)));
+                    ui.label(
+                        egui::RichText::new(format!("  {}", tr("Loading decoders…"))).color(theme.color(Token::Ink3)),
+                    );
                     return;
                 }
                 let items = picker_items(&list, &new_filter);
@@ -337,7 +342,7 @@ impl LaApp {
         let mut chan_items: Vec<(Option<ChannelId>, String)> = Vec::new();
         for enabled in [true, false] {
             for (c, label, e) in rows.iter().filter(|r| r.2 == enabled) {
-                let l = if *e { label.clone() } else { format!("{label}  (disabled)") };
+                let l = if *e { label.clone() } else { tr("{}  (disabled)").replacen("{}", label, 1) };
                 chan_items.push((Some(*c), l));
             }
         }
@@ -357,7 +362,7 @@ impl LaApp {
                                 .color(theme.color(Token::Ink1)),
                         );
                         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                            if icon_button(ui, "Close", icons::close).clicked() {
+                            if icon_button(ui, tr("Close"), icons::close).clicked() {
                                 cancel = true;
                             }
                         });
@@ -382,7 +387,7 @@ impl LaApp {
                                         let mut items: Vec<String> = Vec::new();
                                         let mut values: Vec<Option<ChannelId>> = Vec::new();
                                         if !*required {
-                                            items.push("None".into());
+                                            items.push(tr("None").into());
                                             values.push(None);
                                         }
                                         for (c, l) in &chan_items {
@@ -396,7 +401,7 @@ impl LaApp {
                                         let mut sel = k.min(items.len());
                                         let shown: Vec<String> = if k == usize::MAX {
                                             let mut v = items.clone();
-                                            v.push("Select a channel".into());
+                                            v.push(tr("Select a channel").into());
                                             sel = v.len() - 1;
                                             v
                                         } else {
@@ -436,7 +441,11 @@ impl LaApp {
                                                     .iter()
                                                     .map(|v| {
                                                         let t = value_text(v);
-                                                        if *v == o.default { format!("{t} (Standard)") } else { t }
+                                                        if *v == o.default {
+                                                            tr("{} (Standard)").replacen("{}", &t, 1)
+                                                        } else {
+                                                            t
+                                                        }
                                                     })
                                                     .collect();
                                                 ui.add_sized(vec2(300.0, 40.0), Dropdown::new(&o.desc, k, &items));
@@ -461,10 +470,10 @@ impl LaApp {
                                     }
                                     // Common rows.
                                     ui.label("");
-                                    ui.add(Checkbox::new(&mut d.show_in_table, "Show in protocol results table"));
+                                    ui.add(Checkbox::new(&mut d.show_in_table, tr("Show in protocol results table")));
                                     ui.end_row();
                                     ui.label("");
-                                    ui.add(Checkbox::new(&mut d.to_terminal, "Stream to terminal"));
+                                    ui.add(Checkbox::new(&mut d.to_terminal, tr("Stream to terminal")));
                                     ui.end_row();
                                 });
                             if let Some(url) = &info.doc_url {
@@ -472,7 +481,7 @@ impl LaApp {
                                 ui.horizontal(|ui| {
                                     let (r, _) = ui.allocate_exact_size(vec2(16.0, 16.0), Sense::hover());
                                     icons::info(ui.painter(), r, theme.color(Token::Mark));
-                                    ui.hyperlink_to("Learn more about this decoder", url);
+                                    ui.hyperlink_to(tr("Learn more about this decoder"), url);
                                 });
                             }
                         });
@@ -493,15 +502,15 @@ impl LaApp {
                 ui.separator();
                 Frame::new().inner_margin(Margin::same(24)).show(ui, |ui| {
                     ui.horizontal(|ui| {
-                        if ui.add(Button::secondary("Reset")).clicked() {
+                        if ui.add(Button::secondary(tr("Reset"))).clicked() {
                             reset = true;
                         }
                         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                            if ui.add(Button::primary("Save")).clicked() {
+                            if ui.add(Button::primary(tr("Save"))).clicked() {
                                 save = true;
                             }
                             ui.add_space(8.0);
-                            if ui.add(Button::secondary("Cancel")).clicked() {
+                            if ui.add(Button::secondary(tr("Cancel"))).clicked() {
                                 cancel = true;
                             }
                         });
@@ -591,7 +600,7 @@ impl LaApp {
         if save {
             let chosen: Vec<(String, Option<ChannelId>)> = d.channels.iter().map(|c| (c.0.clone(), c.3)).collect();
             if let Err(e) = validate_channels(&info, &chosen) {
-                d.error = Some(e.into());
+                d.error = Some(tr(e).into());
                 d.bad = d.channels.iter().filter(|c| c.2 && c.3.is_none()).map(|c| c.0.clone()).collect();
                 self.ui.analyzer_dialog = Some(d);
                 return;
@@ -654,7 +663,10 @@ impl LaApp {
         self.decode.set(s.id, a.id, a.task(info), a.out.clone());
         if !newly.is_empty() {
             let names: Vec<String> = newly.iter().map(|c| c.short_name()).collect();
-            self.toast(Toast::new(ToastKind::Info, format!("Enabled {} for {}", names.join(", "), a.name)));
+            self.toast(Toast::new(
+                ToastKind::Info,
+                tr("Enabled {} for {}").replacen("{}", &names.join(", "), 1).replacen("{}", &a.name, 1),
+            ));
         }
         self.settings.inspector.tab = ANALYZERS_PANEL.into();
         self.settings.inspector.open = true;
@@ -677,11 +689,11 @@ impl LaApp {
     pub(crate) fn analyzers_panel_actions(&mut self, ui: &mut Ui) {
         // The ⏸ toggle, left of `+` (the layout runs right to left).
         let paused = self.ui.analyzers_paused;
-        let tip = if paused { "Resume analyzers" } else { "Pause analyzers" };
-        let add = icon_button(ui, "Add Analyzer", icons::plus).on_hover_text("Add Analyzer");
+        let tip = if paused { tr("Resume analyzers") } else { tr("Pause analyzers") };
+        let add = icon_button(ui, tr("Add Analyzer"), icons::plus).on_hover_text(tr("Add Analyzer"));
         let theme = ui.la_theme();
         let (rect, resp) = ui.allocate_exact_size(vec2(20.0, 20.0), Sense::click());
-        resp.widget_info(|| WidgetInfo::selected(Role::Button, true, paused, "Pause analyzers"));
+        resp.widget_info(|| WidgetInfo::selected(Role::Button, true, paused, tr("Pause analyzers")));
         if paused {
             ui.painter().rect_filled(rect, 3.0, theme.color(Token::Mark));
         }
@@ -709,22 +721,26 @@ impl LaApp {
             let list = self.decoder_list();
             let mut pick: Option<String> = None;
             if self.decode.decoders().is_none() {
-                ui.label(egui::RichText::new("    Loading decoders…").color(theme.color(Token::Ink3)));
+                ui.label(
+                    egui::RichText::new(format!("    {}", tr("Loading decoders…"))).color(theme.color(Token::Ink3)),
+                );
                 return;
             }
             ui.horizontal(|ui| {
                 ui.add_space(16.0);
                 let r = ui.add(
                     egui::TextEdit::singleline(&mut self.ui.panel_filter)
-                        .hint_text("Filter")
+                        .hint_text(tr("Filter"))
                         .desired_width(ui.available_width() - 16.0),
                 );
-                super::label_text_edit(&r, &self.ui.panel_filter, "Filter decoders");
+                super::label_text_edit(&r, &self.ui.panel_filter, tr("Filter decoders"));
             });
             ui.add_space(6.0);
             let items = picker_items(&list, &self.ui.panel_filter);
             if items.is_empty() {
-                ui.label(egui::RichText::new("    No matching analyzers").color(theme.color(Token::Ink3)));
+                ui.label(
+                    egui::RichText::new(format!("    {}", tr("No matching analyzers"))).color(theme.color(Token::Ink3)),
+                );
             }
             egui::ScrollArea::vertical().id_salt("all_decoders").auto_shrink([false, false]).show(ui, |ui| {
                 for d in items {
@@ -781,7 +797,7 @@ impl LaApp {
                         1.0,
                         theme.color(Token::Ink4),
                     );
-                    (format!("Paused at {:.0} %", progress * 100.0), "paused")
+                    (tr("Paused at {} %").replacen("{}", &format!("{:.0}", progress * 100.0), 1), "paused")
                 }
                 Status::Running => {
                     let bar = Rect::from_min_size(
@@ -798,13 +814,13 @@ impl LaApp {
                 }
                 Status::Complete => {
                     icons::success(p, st, theme.color(Token::Good));
-                    ("Complete".to_owned(), "complete")
+                    (tr("Complete").to_owned(), "complete")
                 }
                 Status::Error(e) => {
                     icons::error(p, st, theme.color(Token::Alert));
                     (e.clone(), "error")
                 }
-                Status::Idle => ("Waiting for data".to_owned(), "idle"),
+                Status::Idle => (tr("Waiting for data").to_owned(), "idle"),
             };
             let sr = ui.interact(st, ui.make_persistent_id(("an_status", id)), Sense::hover());
             sr.widget_info(|| WidgetInfo::labeled(Role::Label, true, format!("{name} {label}")));
@@ -814,7 +830,7 @@ impl LaApp {
             }
             let kebab = Rect::from_center_size(pos2(rect.right() - 16.0, rect.center().y), vec2(18.0, 18.0));
             let k = ui.interact(kebab, ui.make_persistent_id(("an_kebab", id)), Sense::click());
-            k.widget_info(|| WidgetInfo::labeled(Role::Button, true, format!("{name} menu")));
+            k.widget_info(|| WidgetInfo::labeled(Role::Button, true, tr("{} menu").replacen("{}", &name, 1)));
             if hovered {
                 icons::kebab(ui.painter(), kebab, theme.color(Token::Ink2));
             }
@@ -823,24 +839,24 @@ impl LaApp {
             for popup in [Popup::menu(&k), Popup::context_menu(&resp)] {
                 popup.frame(popover_frame(ui)).width(240.0).show(|ui| {
                     ui.add_enabled_ui(!recording, |ui| {
-                        if menu_item(ui, "Edit…", None)
-                            .on_disabled_hover_text("Analyzers can't be edited while recording")
+                        if menu_item(ui, tr("Edit…"), None)
+                            .on_disabled_hover_text(tr("Analyzers can't be edited while recording"))
                             .clicked()
                         {
                             act = Some((id, Act::Edit));
                         }
-                        if menu_item(ui, "Restart", None).clicked() {
+                        if menu_item(ui, tr("Restart"), None).clicked() {
                             act = Some((id, Act::Restart));
                         }
                     });
-                    if menu_item(ui, "Delete", None).clicked() {
+                    if menu_item(ui, tr("Delete"), None).clicked() {
                         act = Some((id, Act::Delete));
                     }
                     menu_separator(ui);
-                    if menu_check_item(ui, "Stream to Terminal", a.to_terminal, None).clicked() {
+                    if menu_check_item(ui, tr("Stream to Terminal"), a.to_terminal, None).clicked() {
                         act = Some((id, Act::Terminal));
                     }
-                    if menu_check_item(ui, "Show in Data Table", a.show_in_table, None).clicked() {
+                    if menu_check_item(ui, tr("Show in Data Table"), a.show_in_table, None).clicked() {
                         act = Some((id, Act::Table));
                     }
                     menu_separator(ui);
@@ -852,7 +868,7 @@ impl LaApp {
                     }
                     if let Some(info) = &info {
                         menu_separator(ui);
-                        super::rowctl::submenu_checked(ui, "Annotation Rows", false, 220.0, |ui| {
+                        super::rowctl::submenu_checked(ui, tr("Annotation Rows"), false, 220.0, |ui| {
                             for (rid, desc) in crate::decode::all_rows(info) {
                                 if menu_check_item(ui, &desc, a.rows_visible.contains(&rid), None).clicked() {
                                     act = Some((id, Act::Row(rid.clone())));
@@ -861,15 +877,15 @@ impl LaApp {
                         });
                     }
                     menu_separator(ui);
-                    if menu_item(ui, "Export to TXT/CSV…", None).clicked() {
+                    if menu_item(ui, tr("Export to TXT/CSV…"), None).clicked() {
                         act = Some((id, Act::Export));
                     }
-                    super::rowctl::submenu_checked(ui, "Select Color", false, 200.0, |ui| {
+                    super::rowctl::submenu_checked(ui, tr("Select Color"), false, 200.0, |ui| {
                         ui.horizontal_wrapped(|ui| {
                             ui.set_width(180.0);
                             for c in ANALYZER_PALETTE {
                                 let (r, resp) = ui.allocate_exact_size(vec2(18.0, 18.0), Sense::click());
-                                resp.widget_info(|| WidgetInfo::labeled(Role::Button, true, "Color"));
+                                resp.widget_info(|| WidgetInfo::labeled(Role::Button, true, tr("Color")));
                                 ui.painter().rect_filled(r, 3.0, c32(c));
                                 if resp.clicked() {
                                     act = Some((id, Act::Color(c)));
@@ -897,7 +913,7 @@ impl LaApp {
                 if let Some(k) = s.analyzers.iter().position(|x| x.id == id) {
                     let gone = s.analyzers.remove(k);
                     self.decode.remove(s.id, id);
-                    let toast = Toast::new(ToastKind::Info, "Analyzer deleted")
+                    let toast = Toast::new(ToastKind::Info, tr("Analyzer deleted"))
                         .id("analyzer-deleted")
                         .action("Undo")
                         .lifetime(std::time::Duration::from_secs(5));
@@ -983,18 +999,18 @@ impl LaApp {
         let mut idx = at.analyzer.and_then(|id| s.analyzers.iter().position(|a| a.id == id)).unwrap_or(0);
         let radix = s.analyzers.get(idx).map_or(Radix::Hex, |a| a.radix);
         let status = if !at.enabled {
-            "Off".to_owned()
+            tr("Off").to_owned()
         } else if let (Some(t), true) = (s.trigger, s.trigger_scan.last.is_some()) {
-            format!("Last trigger at {}", crate::core::format::si_sig(t.as_secs_f64(), "s", 4))
+            tr("Last trigger at {}").replacen("{}", &crate::core::format::si_sig(t.as_secs_f64(), "s", 4), 1)
         } else {
-            "Armed".to_owned()
+            tr("Armed").to_owned()
         };
         // The whole card is off while Timed or Trigger records.
         let card_off = busy && mode != CaptureMode::Continuous;
         let switch_block = if !streams {
-            Some("Needs a device that can stream (Continuous mode)")
+            Some(tr("Needs a device that can stream (Continuous mode)"))
         } else if at.query.is_empty() && !at.enabled {
-            Some("Enter a value to match")
+            Some(tr("Enter a value to match"))
         } else {
             None
         };
@@ -1008,18 +1024,18 @@ impl LaApp {
                 ui.set_height(40.0);
                 ui.add_space(12.0);
                 let (r, resp) = ui.allocate_exact_size(vec2(16.0, 16.0), Sense::click());
-                resp.widget_info(|| WidgetInfo::selected(Role::Button, true, open, "Analyzer Trigger details"));
+                resp.widget_info(|| WidgetInfo::selected(Role::Button, true, open, tr("Analyzer Trigger details")));
                 let chev = if open { icons::chevron_down } else { icons::chevron_right };
                 chev(ui.painter(), r.shrink(3.0), theme.color(Token::Ink3));
                 if resp.clicked() {
                     open = !open;
                 }
-                ui.label(egui::RichText::new("Analyzer Trigger").color(theme.color(Token::Ink1)));
+                ui.label(egui::RichText::new(tr("Analyzer Trigger")).color(theme.color(Token::Ink1)));
                 ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                     ui.add_space(16.0);
                     let r = ui
                         .add_enabled_ui(switch_block.is_none(), |ui| {
-                            ui.add(crate::ui::widgets::BinarySwitch::new(&mut at.enabled, "Analyzer Trigger"))
+                            ui.add(crate::ui::widgets::BinarySwitch::new(&mut at.enabled, tr("Analyzer Trigger")))
                         })
                         .inner;
                     if let Some(why) = switch_block {
@@ -1035,18 +1051,18 @@ impl LaApp {
                             let label = |ui: &mut Ui, t: &str| {
                                 ui.label(egui::RichText::new(t).color(theme.color(Token::Ink3)));
                             };
-                            label(ui, "Analyzer");
-                            ui.add(Dropdown::new("Trigger analyzer", &mut idx, &names));
+                            label(ui, tr("Analyzer"));
+                            ui.add(Dropdown::new(tr("Trigger analyzer"), &mut idx, &names));
                             ui.end_row();
-                            label(ui, "Match");
+                            label(ui, tr("Match"));
                             let r = ui
                                 .add(
                                     egui::TextEdit::singleline(&mut at.query)
-                                        .hint_text(format!("Value [{}]", radix_short(radix)))
+                                        .hint_text(tr("Value [{}]").replacen("{}", radix_short(radix), 1))
                                         .desired_width(ui.available_width()),
                                 )
-                                .on_hover_text("Triggers when a result's text contains this, ignoring case.");
-                            super::label_text_edit(&r, &at.query, "Trigger match");
+                                .on_hover_text(tr("Triggers when a result's text contains this, ignoring case."));
+                            super::label_text_edit(&r, &at.query, tr("Trigger match"));
                             ui.end_row();
                         });
                         ui.label(egui::RichText::new(&status).color(theme.color(Token::Ink4)));
@@ -1055,7 +1071,7 @@ impl LaApp {
             }
         });
         if card_off {
-            card.response.on_disabled_hover_text("Available in Continuous mode");
+            card.response.on_disabled_hover_text(tr("Available in Continuous mode"));
         }
         self.ui.analyzer_trigger_open = open;
         let Some(s) = self.session.as_mut() else { return };
@@ -1073,7 +1089,7 @@ impl LaApp {
             s.settings.mode = CaptureMode::Continuous;
             self.ui.analyzer_trigger_undo = Some((sid, mode));
             self.toast(
-                Toast::new(ToastKind::Info, "Switched to Continuous mode for the Analyzer Trigger.")
+                Toast::new(ToastKind::Info, tr("Switched to Continuous mode for the Analyzer Trigger."))
                     .id("analyzer-trigger-mode")
                     .action("Undo"),
             );
@@ -1089,11 +1105,11 @@ impl LaApp {
 /// The radix in the Match placeholder.
 fn radix_short(r: Radix) -> &'static str {
     match r {
-        Radix::Native => "Native",
-        Radix::Hex => "Hex",
-        Radix::Dec => "Dec",
-        Radix::Bin => "Bin",
-        Radix::Ascii => "Ascii",
+        Radix::Native => tr("Native"),
+        Radix::Hex => tr("Hex"),
+        Radix::Dec => tr("Dec"),
+        Radix::Bin => tr("Bin"),
+        Radix::Ascii => tr("Ascii"),
     }
 }
 

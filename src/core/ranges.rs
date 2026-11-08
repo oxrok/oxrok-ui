@@ -246,29 +246,30 @@ impl Metric {
     /// The label as `(base, subscript)`, e.g. `("f", "mean")`, and whether
     /// the base is italic.
     pub fn label(self) -> (&'static str, &'static str, bool) {
+        use Metric::*;
         match self {
-            Metric::Dt => ("ΔT", "", false),
-            Metric::NRising => ("N", "rising", false),
-            Metric::NFalling => ("N", "falling", false),
-            Metric::FMean => ("f", "mean", true),
-            Metric::FMin => ("f", "min", true),
-            Metric::FMax => ("f", "max", true),
-            Metric::TStd => ("T", "std", false),
-            Metric::PwPos => ("Positive pulse width (mean)", "", false),
-            Metric::PwNeg => ("Negative pulse width (mean)", "", false),
-            Metric::Duty => ("Duty cycle", "", false),
-            Metric::PwPosMin => ("Positive pulse width (min)", "", false),
-            Metric::PwPosMax => ("Positive pulse width (max)", "", false),
-            Metric::PwNegMin => ("Negative pulse width (min)", "", false),
-            Metric::PwNegMax => ("Negative pulse width (max)", "", false),
-            Metric::FJitter => ("f", "jitter", true),
-            Metric::VMin => ("V", "min", false),
-            Metric::VMax => ("V", "max", false),
-            Metric::Vpp => ("V", "pp", false),
-            Metric::VMean => ("V", "mean", false),
-            Metric::VRms => ("V", "RMS", false),
-            Metric::VMinT => ("V", "min time", false),
-            Metric::VMaxT => ("V", "max time", false),
+            Dt => ("ΔT", "", false),
+            NRising => ("N", crate::l10n::tr("rising"), false),
+            NFalling => ("N", crate::l10n::tr("falling"), false),
+            FMean => ("f", crate::l10n::tr("mean"), true),
+            FMin => ("f", crate::l10n::tr("min"), true),
+            FMax => ("f", crate::l10n::tr("max"), true),
+            TStd => ("T", crate::l10n::tr("std"), false),
+            PwPos => (crate::l10n::tr("Positive pulse width (mean)"), "", false),
+            PwNeg => (crate::l10n::tr("Negative pulse width (mean)"), "", false),
+            Duty => (crate::l10n::tr("Duty cycle"), "", false),
+            PwPosMin => (crate::l10n::tr("Positive pulse width (min)"), "", false),
+            PwPosMax => (crate::l10n::tr("Positive pulse width (max)"), "", false),
+            PwNegMin => (crate::l10n::tr("Negative pulse width (min)"), "", false),
+            PwNegMax => (crate::l10n::tr("Negative pulse width (max)"), "", false),
+            FJitter => ("f", crate::l10n::tr("jitter"), true),
+            VMin => ("V", crate::l10n::tr("min"), false),
+            VMax => ("V", crate::l10n::tr("max"), false),
+            Vpp => ("V", crate::l10n::tr("pp"), false),
+            VMean => ("V", crate::l10n::tr("mean"), false),
+            VRms => ("V", "RMS", false),
+            VMinT => ("V", crate::l10n::tr("min time"), false),
+            VMaxT => ("V", crate::l10n::tr("max time"), false),
         }
     }
 
@@ -301,30 +302,32 @@ impl Metric {
     pub fn tooltip(self) -> &'static str {
         use Metric::*;
         match self {
-            Dt => "Range duration: end minus begin.",
-            NRising => "Number of low-to-high transitions in the range.",
-            NFalling => "Number of high-to-low transitions in the range.",
-            FMean => {
-                "Mean frequency: complete periods divided by the time between the first and last same-polarity edge."
+            Dt => crate::l10n::tr("Range duration: end minus begin."),
+            NRising => crate::l10n::tr("Number of low-to-high transitions in the range."),
+            NFalling => crate::l10n::tr("Number of high-to-low transitions in the range."),
+            FMean => crate::l10n::tr(
+                "Mean frequency: complete periods divided by the time between the first and last same-polarity edge.",
+            ),
+            FMin => crate::l10n::tr("Minimum frequency: 1 / longest period."),
+            FMax => crate::l10n::tr("Maximum frequency: 1 / shortest period."),
+            TStd => crate::l10n::tr("Standard deviation of the periods (period-to-period variation)."),
+            PwPos => crate::l10n::tr("Mean width of the high (positive) pulses."),
+            PwNeg => crate::l10n::tr("Mean width of the low (negative) pulses."),
+            Duty => crate::l10n::tr("Duty cycle: total high time divided by the range duration."),
+            PwPosMin => crate::l10n::tr("Shortest high (positive) pulse."),
+            PwPosMax => crate::l10n::tr("Longest high (positive) pulse."),
+            PwNegMin => crate::l10n::tr("Shortest low (negative) pulse."),
+            PwNegMax => crate::l10n::tr("Longest low (negative) pulse."),
+            FJitter => {
+                crate::l10n::tr("Frequency jitter: RMS of (period − mean period) / mean period, as a percentage.")
             }
-            FMin => "Minimum frequency: 1 / longest period.",
-            FMax => "Maximum frequency: 1 / shortest period.",
-            TStd => "Standard deviation of the periods (period-to-period variation).",
-            PwPos => "Mean width of the high (positive) pulses.",
-            PwNeg => "Mean width of the low (negative) pulses.",
-            Duty => "Duty cycle: total high time divided by the range duration.",
-            PwPosMin => "Shortest high (positive) pulse.",
-            PwPosMax => "Longest high (positive) pulse.",
-            PwNegMin => "Shortest low (negative) pulse.",
-            PwNegMax => "Longest low (negative) pulse.",
-            FJitter => "Frequency jitter: RMS of (period − mean period) / mean period, as a percentage.",
-            VMin => "Minimum voltage in the range.",
-            VMax => "Maximum voltage in the range.",
-            Vpp => "Peak-to-peak voltage: maximum minus minimum.",
-            VMean => "Arithmetic mean of the samples.",
-            VRms => "Root-mean-square voltage: square root of the mean of the squares.",
-            VMinT => "Time of the minimum voltage, relative to the range start.",
-            VMaxT => "Time of the maximum voltage, relative to the range start.",
+            VMin => crate::l10n::tr("Minimum voltage in the range."),
+            VMax => crate::l10n::tr("Maximum voltage in the range."),
+            Vpp => crate::l10n::tr("Peak-to-peak voltage: maximum minus minimum."),
+            VMean => crate::l10n::tr("Arithmetic mean of the samples."),
+            VRms => crate::l10n::tr("Root-mean-square voltage: square root of the mean of the squares."),
+            VMinT => crate::l10n::tr("Time of the minimum voltage, relative to the range start."),
+            VMaxT => crate::l10n::tr("Time of the maximum voltage, relative to the range start."),
         }
     }
 }

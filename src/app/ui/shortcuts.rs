@@ -103,7 +103,11 @@ fn chips(ui: &mut Ui, alternatives: &[Vec<String>]) {
     for (i, keys) in alternatives.iter().rev().enumerate() {
         if i > 0 {
             ui.add_space(6.0);
-            ui.label(egui::RichText::new("OR").text_style(Text::Caption.style()).color(theme.color(Token::Ink4)));
+            ui.label(
+                egui::RichText::new(crate::l10n::tr("OR"))
+                    .text_style(Text::Caption.style())
+                    .color(theme.color(Token::Ink4)),
+            );
             ui.add_space(6.0);
         }
         for k in keys.iter().rev() {
@@ -126,7 +130,7 @@ impl LaApp {
                 ui.set_width(600.0);
                 Frame::new().inner_margin(Margin::symmetric(32, 24)).show(ui, |ui| {
                     ui.label(
-                        egui::RichText::new("Keyboard Shortcuts")
+                        egui::RichText::new(crate::l10n::tr("Keyboard Shortcuts"))
                             .text_style(Text::Display.style())
                             .color(theme.color(Token::Ink1)),
                     );
@@ -138,10 +142,10 @@ impl LaApp {
                     let before = filter.clone();
                     let edit = ui.add(
                         egui::TextEdit::singleline(&mut filter)
-                            .hint_text("Search shortcuts")
+                            .hint_text(crate::l10n::tr("Search shortcuts"))
                             .desired_width(ui.available_width()),
                     );
-                    super::label_text_edit(&edit, &filter, "Search shortcuts");
+                    super::label_text_edit(&edit, &filter, crate::l10n::tr("Search shortcuts"));
                     if ui.memory(|m| m.focused().is_none()) {
                         edit.request_focus();
                     }
@@ -166,7 +170,7 @@ impl LaApp {
                         if shown.is_empty() {
                             Frame::new().inner_margin(Margin::same(32)).show(ui, |ui| {
                                 ui.label(
-                                    egui::RichText::new("No shortcuts match")
+                                    egui::RichText::new(crate::l10n::tr("No shortcuts match"))
                                         .text_style(Text::Prose.style())
                                         .color(theme.color(Token::Ink3)),
                                 );
@@ -204,7 +208,7 @@ impl LaApp {
                 ui.separator();
                 Frame::new().inner_margin(Margin::same(24)).show(ui, |ui| {
                     ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                        if ui.add(Button::primary("Close")).clicked() {
+                        if ui.add(Button::primary(crate::l10n::tr("Close"))).clicked() {
                             close = true;
                         }
                     });

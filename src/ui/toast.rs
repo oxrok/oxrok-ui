@@ -31,8 +31,9 @@ pub struct Toast {
     pub body: String,
     /// `None` = persistent.
     pub lifetime: Option<Duration>,
-    /// Up to two text actions.
-    pub actions: Vec<String>,
+    /// Up to two text actions. Stored in English and translated when
+    /// drawn, so handlers keep matching one stable label.
+    pub actions: Vec<&'static str>,
     /// A progress bar, 0–1.
     pub progress: Option<f32>,
 }
@@ -64,8 +65,8 @@ impl Toast {
     }
 
     /// Adds an action (at most two are shown).
-    pub fn action(mut self, label: impl Into<String>) -> Self {
-        self.actions.push(label.into());
+    pub fn action(mut self, label: &'static str) -> Self {
+        self.actions.push(label);
         self
     }
 
@@ -216,22 +217,25 @@ impl Toasts {
                                                 for a in toast.actions.iter().take(2).rev() {
                                                     let r = ui.add(
                                                         egui::Button::new(
-                                                            RichText::new(a).color(theme.color(Token::FlareLink)),
+                                                            RichText::new(crate::l10n::tr(a))
+                                                                .color(theme.color(Token::FlareLink)),
                                                         )
                                                         .frame(false),
                                                     );
                                                     if r.clicked() {
-                                                        clicked.push((toast.id.clone(), a.clone()));
+                                                        clicked.push((toast.id.clone(), (*a).to_owned()));
                                                     }
                                                 }
                                             });
                                         }
                                     });
                                     let (close, resp) = ui.allocate_exact_size(vec2(16.0, 16.0), Sense::click());
-                                    resp.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Button, true, "Dismiss"));
+                                    resp.widget_info(|| {
+                                        egui::WidgetInfo::labeled(egui::Role::Button, true, crate::l10n::tr("Dismiss"))
+                                    });
                                     let c = if resp.hovered() { Token::Ink1 } else { Token::Ink3 };
                                     icons::close(ui.painter(), close, theme.color(c));
-                                    if resp.on_hover_text("Dismiss").clicked() {
+                                    if resp.on_hover_text(crate::l10n::tr("Dismiss")).clicked() {
                                         dismissed = Some(toast.id.clone());
                                     }
                                 });

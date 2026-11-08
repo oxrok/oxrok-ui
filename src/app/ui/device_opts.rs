@@ -7,6 +7,7 @@ use crate::app::worker::WorkerCmd;
 use crate::backend::{
     ConfValue, DeviceOption, OptionGroup, OptionKind, OptionScope, ThresholdCaps, ThresholdChoice, format_value,
 };
+use crate::l10n::tr;
 use crate::ui::Token;
 use crate::ui::theme::ThemeExt;
 use crate::ui::toast::{Toast, ToastKind};
@@ -49,7 +50,7 @@ pub(super) fn threshold_ui(
         // A file's panel: what the capture used.
         if let Some(c) = current {
             ui.add_space(12.0);
-            hint(ui, &format!("Logic threshold: {}", choice_label(c, None)));
+            hint(ui, &tr("Logic threshold: {}").replacen("{}", &choice_label(c, None), 1));
         }
         return None;
     };
@@ -67,22 +68,22 @@ pub(super) fn threshold_ui(
     if t.options.is_empty() {
         // A voltage range only.
         let Some(r) = &t.custom else { return None };
-        hint(ui, "Logic threshold");
+        hint(ui, tr("Logic threshold"));
         ui.add_space(6.0);
-        return input(ui, "Logic threshold", r, custom_value(r));
+        return input(ui, tr("Logic threshold"), r, custom_value(r));
     }
-    hint(ui, "Logic threshold");
+    hint(ui, tr("Logic threshold"));
     ui.add_space(6.0);
     let mut labels: Vec<String> = t.options.iter().map(|o| o.label.clone()).collect();
     if t.custom.is_some() {
-        labels.push("Custom…".into());
+        labels.push(tr("Custom…").into());
     }
     let mut idx = match current {
         Some(ThresholdChoice::Preset(id)) => t.options.iter().position(|o| &o.id == id).unwrap_or(0),
         Some(ThresholdChoice::Custom(_)) if t.custom.is_some() => t.options.len(),
         _ => 0,
     };
-    if ui.add(Dropdown::new("Logic threshold", &mut idx, &labels)).changed() {
+    if ui.add(Dropdown::new(tr("Logic threshold"), &mut idx, &labels)).changed() {
         out = Some(match t.options.get(idx) {
             Some(o) => ThresholdChoice::Preset(o.id.clone()),
             None => ThresholdChoice::Custom(custom_value(t.custom.as_ref().unwrap())),
@@ -95,7 +96,7 @@ pub(super) fn threshold_ui(
             Some(ThresholdChoice::Custom(v)) => *v,
             _ => custom_value(r),
         };
-        if let Some(c) = input(ui, "Custom threshold", r, v) {
+        if let Some(c) = input(ui, tr("Custom threshold"), r, v) {
             out = Some(c);
         }
     }
@@ -230,7 +231,11 @@ impl LaApp {
             return;
         }
         let n = s.changed_options();
-        let label = if n == 0 { "Device options".to_owned() } else { format!("Device options ({n})") };
+        let label = if n == 0 {
+            tr("Device options").to_owned()
+        } else {
+            tr("Device options ({})").replacen("{}", &n.to_string(), 1)
+        };
         super::inspector::divider(ui);
         let open = self.ui.device_options_open;
         if disclosure(ui, "device_options", &label, open, |_| {}) {
@@ -244,7 +249,7 @@ impl LaApp {
         if groups.len() > 1 {
             let labels: Vec<&str> = groups.iter().map(|g| g.scope.label()).collect();
             if groups.len() > MAX_SEGMENTS {
-                ui.add(Dropdown::new("Channel group", &mut scope_idx, &labels));
+                ui.add(Dropdown::new(tr("Channel group"), &mut scope_idx, &labels));
             } else {
                 let segs: Vec<Segment> =
                     labels.iter().map(|l| Segment { label: l, enabled: true, tooltip: "" }).collect();
@@ -267,7 +272,7 @@ impl LaApp {
         }
         if !read_only {
             ui.add_space(4.0);
-            if ui.add_enabled(!busy && n > 0, Button::tertiary("Reset to defaults")).clicked() {
+            if ui.add_enabled(!busy && n > 0, Button::tertiary(tr("Reset to defaults"))).clicked() {
                 edits.push(Edit::Reset);
             }
         }
@@ -302,9 +307,9 @@ impl LaApp {
         super::inspector::divider(ui);
         let open = self.settings.inspector.command_line_open;
         let mut copy = false;
-        let toggled = disclosure(ui, "command_line", "Command line", open, |ui| {
+        let toggled = disclosure(ui, "command_line", tr("Command line"), open, |ui| {
             if open {
-                copy = ui.add(Button::tertiary("Copy")).on_hover_text("Copy the oxrok command").clicked();
+                copy = ui.add(Button::tertiary(tr("Copy"))).on_hover_text(tr("Copy the oxrok command")).clicked();
             }
         });
         if toggled {
@@ -340,7 +345,7 @@ impl LaApp {
     pub(crate) fn copy_cli_command(&mut self, ctx: &egui::Context) {
         let Some(s) = self.session.as_ref() else { return };
         ctx.copy_text(s.cli_command().one_line());
-        self.toast(Toast::new(ToastKind::Success, "oxrok command copied"));
+        self.toast(Toast::new(ToastKind::Success, tr("oxrok command copied")));
     }
 
     /// Edit from the panel.

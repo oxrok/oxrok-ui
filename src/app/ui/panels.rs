@@ -74,10 +74,10 @@ fn list_row(
         let k = Rect::from_center_size(pos2(rect.right() - 16.0, cy), vec2(18.0, 18.0));
         let g = Rect::from_center_size(pos2(rect.right() - 40.0, cy), vec2(18.0, 18.0));
         let kr = ui.interact(k, id.with("kebab"), Sense::click());
-        kr.widget_info(|| WidgetInfo::labeled(Role::Button, true, "More"));
+        kr.widget_info(|| WidgetInfo::labeled(Role::Button, true, crate::l10n::tr("More")));
         icons::kebab(ui.painter(), k, theme.color(Token::Ink2));
         let gr = ui.interact(g, id.with("goto"), Sense::click());
-        gr.widget_info(|| WidgetInfo::labeled(Role::Button, true, format!("Go to {text}")));
+        gr.widget_info(|| WidgetInfo::labeled(Role::Button, true, crate::l10n::tr("Go to {}").replacen("{}", text, 1)));
         icons::goto_arrow(ui.painter(), g, theme.color(Token::Ink2));
         if gr.double_clicked() {
             event = Some(RowEvent::GotoDouble);
@@ -146,13 +146,14 @@ fn empty_state(ui: &mut Ui, text: &str, markers: bool) {
 impl LaApp {
     /// Header actions: the `+` add menu.
     pub(crate) fn markers_panel_actions(&mut self, ui: &mut Ui) {
-        let add = icon_button(ui, "Add Timing Marker", icons::plus).on_hover_text("Add Timing Markers");
+        let add = icon_button(ui, crate::l10n::tr("Add Timing Marker"), icons::plus)
+            .on_hover_text(crate::l10n::tr("Add Timing Markers"));
         let mut pick = None;
         Popup::menu(&add).frame(popover_frame(ui)).width(240.0).show(|ui| {
-            if menu_item(ui, "Add Marker Pair", Some("Shift+M")).clicked() {
+            if menu_item(ui, crate::l10n::tr("Add Marker Pair"), Some("Shift+M")).clicked() {
                 pick = Some(true);
             }
-            if menu_item(ui, "Add Single Marker", Some("M")).clicked() {
+            if menu_item(ui, crate::l10n::tr("Add Single Marker"), Some("M")).clicked() {
                 pick = Some(false);
             }
         });
@@ -165,7 +166,7 @@ impl LaApp {
     pub(crate) fn markers_panel(&mut self, ui: &mut Ui) {
         let Some(s) = self.session.as_ref() else { return };
         if s.markers.items.is_empty() {
-            empty_state(ui, "Use the + button to place timing markers", true);
+            empty_state(ui, crate::l10n::tr("Use the + button to place timing markers"), true);
             return;
         }
         let items = s.markers.items.clone();
@@ -212,7 +213,12 @@ impl LaApp {
                     );
                     let tr = ui.interact(tri, id.with("disclosure"), Sense::click());
                     tr.widget_info(|| {
-                        WidgetInfo::selected(Role::Button, true, expanded, format!("Expand {}", item.name()))
+                        WidgetInfo::selected(
+                            Role::Button,
+                            true,
+                            expanded,
+                            crate::l10n::tr("Expand {}").replacen("{}", &item.name(), 1),
+                        )
                     });
                     let c = ui.la_theme().color(Token::Ink3);
                     let pts = if expanded {
@@ -304,12 +310,14 @@ impl LaApp {
 
     /// Header actions.
     pub(crate) fn ranges_panel_actions(&mut self, ui: &mut Ui) {
-        let add = icon_button(ui, "Add Measurement", icons::plus);
+        let add = icon_button(ui, crate::l10n::tr("Add Measurement"), icons::plus);
         let mut pick = false;
         Popup::menu(&add).frame(popover_frame(ui)).width(240.0).show(|ui| {
-            let r = menu_item(ui, "Add Measurement", Some("R"));
-            if r.on_hover_text("Drag across a channel, or click its start and then its end. Shift+drag works any time.")
-                .clicked()
+            let r = menu_item(ui, crate::l10n::tr("Add Measurement"), Some("R"));
+            if r.on_hover_text(crate::l10n::tr(
+                "Drag across a channel, or click its start and then its end. Shift+drag works any time.",
+            ))
+            .clicked()
             {
                 pick = true;
             }
@@ -324,7 +332,7 @@ impl LaApp {
     pub(crate) fn ranges_panel(&mut self, ui: &mut Ui) {
         let Some(s) = self.session.as_ref() else { return };
         if s.ranges.items.is_empty() {
-            empty_state(ui, "Use the + button to add a measurement", false);
+            empty_state(ui, crate::l10n::tr("Use the + button to add a measurement"), false);
             return;
         }
         let items = s.ranges.items.clone();
@@ -348,7 +356,14 @@ impl LaApp {
             let tri =
                 Rect::from_center_size(pos2(resp.rect.left() + 18.0, resp.rect.top() + ROW_H / 2.0), vec2(12.0, 12.0));
             let tr = ui.interact(tri, id.with("disclosure"), Sense::click());
-            tr.widget_info(|| WidgetInfo::selected(Role::Button, true, r.expanded, format!("Expand {}", r.name)));
+            tr.widget_info(|| {
+                WidgetInfo::selected(
+                    Role::Button,
+                    true,
+                    r.expanded,
+                    crate::l10n::tr("Expand {}").replacen("{}", &r.name, 1),
+                )
+            });
             let c = ui.la_theme().color(Token::Ink3);
             let pts = if r.expanded {
                 vec![
@@ -394,23 +409,27 @@ impl LaApp {
             }
             if let Some(k) = k {
                 Popup::menu(&k).frame(popover_frame(ui)).width(220.0).show(|ui| {
-                    if menu_item(ui, "Go to Range", None).clicked() {
+                    if menu_item(ui, crate::l10n::tr("Go to Range"), None).clicked() {
                         act = Some((r.id, "goto"));
                     }
-                    if menu_item(ui, "Zoom on Range", None).clicked() {
+                    if menu_item(ui, crate::l10n::tr("Zoom on Range"), None).clicked() {
                         act = Some((r.id, "zoom"));
                     }
-                    if menu_item(ui, "Copy", None).clicked() {
+                    if menu_item(ui, crate::l10n::tr("Copy"), None).clicked() {
                         act = Some((r.id, "copy"));
                     }
-                    if menu_item(ui, "Export Range…", None).clicked() {
+                    if menu_item(ui, crate::l10n::tr("Export Range…"), None).clicked() {
                         act = Some((r.id, "export"));
                     }
-                    let del = if several && r.selected { "Delete Selected" } else { "Delete" };
+                    let del = if several && r.selected {
+                        crate::l10n::tr("Delete Selected")
+                    } else {
+                        crate::l10n::tr("Delete")
+                    };
                     if menu_item(ui, del, None).clicked() {
                         act = Some((r.id, "delete"));
                     }
-                    if menu_item(ui, "Delete All", None).clicked() {
+                    if menu_item(ui, crate::l10n::tr("Delete All"), None).clicked() {
                         act = Some((r.id, "delete_all"));
                     }
                 });

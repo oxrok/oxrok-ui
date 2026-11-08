@@ -8,6 +8,7 @@ use crate::core::animator::{Anchor, JUMP_DURATION, ViewRequest, WHEEL_ZOOM_DURAT
 use crate::core::capture::CaptureState;
 use crate::core::nav::{WheelAction, WheelInput};
 use crate::core::{CaptureTime, ViewState};
+use crate::l10n::tr;
 use crate::ui::Token;
 use crate::ui::icons;
 use crate::ui::theme::ThemeExt;
@@ -376,11 +377,11 @@ impl LaApp {
         let run = s.repeat.as_ref().is_some_and(|r| !r.user_stop) && s.state.is_busy();
         let recording = run || matches!(s.state, CaptureState::Starting | CaptureState::Recording);
         let label = if recording {
-            "Stop"
+            tr("Stop")
         } else if s.device.is_demo {
-            "Start Demo"
+            tr("Start Demo")
         } else {
-            "Start"
+            tr("Start")
         };
         let enabled = run || s.state != CaptureState::Stopping;
         let resp = ui.interact(
@@ -423,7 +424,7 @@ impl LaApp {
                 ui.label(r);
                 if offer_new {
                     ui.add_space(6.0);
-                    new_session = ui.add(crate::ui::widgets::Button::primary("New Session")).clicked();
+                    new_session = ui.add(crate::ui::widgets::Button::primary(tr("New Session"))).clicked();
                 }
             }
             None => {
@@ -449,8 +450,8 @@ impl LaApp {
         let has_session = self.session.is_some();
         let r = Rect::from_min_size(pos2(l.toolbar.left(), l.toolbar.top()), vec2(CAPTURE_ITEM_W, TOOLBAR_H));
         let on = has_session && self.settings.inspector.open;
-        let resp = super::nav::tool_button(ui, r, "Inspector", has_session, on, icons::panel);
-        let tip = if has_session { "Inspector (⌘\\)" } else { "Inspector (needs a session)" };
+        let resp = super::nav::tool_button(ui, r, tr("Inspector"), has_session, on, icons::panel);
+        let tip = if has_session { tr("Inspector (⌘\\)") } else { tr("Inspector (needs a session)") };
         if resp.on_hover_text(tip).clicked() {
             self.toggle_inspector();
         }
@@ -462,11 +463,11 @@ impl LaApp {
         let r = Rect::from_min_size(pos2(capture.right() + 3.0, capture.top()), vec2(CAPTURE_ITEM_W, TOOLBAR_H));
         let available = self.command_available("capture.repeat");
         let on = s.settings.repeat;
-        let resp = super::nav::tool_button(ui, r, "Repeat", available.is_ok(), on, icons::repeat);
+        let resp = super::nav::tool_button(ui, r, tr("Repeat"), available.is_ok(), on, icons::repeat);
         let tip = match available {
             Err(why) => why,
-            Ok(()) if on => "Repeat is on: each capture re-arms when it ends",
-            Ok(()) => "Repeat: wait for the next trigger each time a capture ends",
+            Ok(()) if on => tr("Repeat is on: each capture re-arms when it ends"),
+            Ok(()) => tr("Repeat: wait for the next trigger each time a capture ends"),
         };
         if resp.on_hover_text(tip).clicked() {
             self.dispatch("capture.repeat");
@@ -515,7 +516,7 @@ impl LaApp {
         if busy {
             let follow = s.follow;
             // "Live Trigger" once the Analyzer Trigger has fired.
-            let live = if s.follows_analyzer_trigger() { "Live Trigger" } else { "Live" };
+            let live = if s.follows_analyzer_trigger() { tr("Live Trigger") } else { tr("Live") };
             let text_galley =
                 ui.painter().layout_no_wrap(live.into(), Text::CaptionMed.font_id(), theme.color(Token::Ink1));
             let size = vec2(text_galley.size().x + 30.0, 22.0);
@@ -537,7 +538,7 @@ impl LaApp {
                 text_galley,
                 egui::Color32::PLACEHOLDER,
             );
-            let tip = if follow { "Click to freeze the auto-pan." } else { "Click to follow the newest data." };
+            let tip = if follow { tr("Click to freeze the auto-pan.") } else { tr("Click to follow the newest data.") };
             if resp.on_hover_text(tip).clicked() {
                 let s = self.session.as_mut().unwrap();
                 s.follow = !s.follow;
@@ -588,10 +589,10 @@ impl LaApp {
                     });
                 });
             };
-            let suffix = round.map_or(String::new(), |n| format!(" · round {n}"));
+            let suffix = round.map_or(String::new(), |n| tr(" · round {}").replacen("{}", &n.to_string(), 1));
             let title = |t: &str| format!("{t}{suffix}");
             if let Some((frac, remaining)) = p.timer {
-                row(ui, &title("Recording..."), &remaining);
+                row(ui, &title(tr("Recording...")), &remaining);
                 ui.add_space(6.0);
                 // Processed over collected; both are the same without a backlog.
                 bar(ui, frac, theme.color(Token::Good), Some(theme.color(Token::Good).gamma_multiply(0.3)));
@@ -599,7 +600,7 @@ impl LaApp {
             }
             match &p.trigger {
                 Some(TriggerProgressUi::Searching { backlog }) => {
-                    row(ui, &title("Waiting for trigger..."), "");
+                    row(ui, &title(tr("Waiting for trigger...")), "");
                     ui.add_space(6.0);
                     // Indeterminate: a sliding stripe.
                     let (r, _) = ui.allocate_exact_size(vec2(ui.available_width(), 4.0), Sense::hover());
@@ -611,29 +612,29 @@ impl LaApp {
                     ui.ctx().request_repaint();
                     if *backlog > 0.5 {
                         ui.add_space(6.0);
-                        ui.label(format!("Trigger Backlog: {backlog:.1} s."));
+                        ui.label(tr("Trigger Backlog: {} s.").replacen("{}", &format!("{backlog:.1}"), 1));
                     }
                     ui.add_space(14.0);
                 }
                 Some(TriggerProgressUi::Triggered { frac, remaining, .. }) => {
-                    row(ui, &title("Recording..."), remaining);
+                    row(ui, &title(tr("Recording...")), remaining);
                     ui.add_space(6.0);
                     bar(ui, *frac, theme.color(Token::Good), None);
                     ui.add_space(14.0);
                 }
                 None => {}
             }
-            row(ui, "Memory", &format!("{:.1} MB", p.used_mb));
+            row(ui, tr("Memory"), &format!("{:.1} MB", p.used_mb));
             ui.add_space(6.0);
             bar(ui, p.memory, theme.color(Token::Caution), None);
         });
         // ✕ minimizes the card into the rail.
         let close = Rect::from_min_size(pos2(card.right() - 22.0, card.top() + 8.0), vec2(14.0, 14.0));
         let resp = ui.interact(close, ui.make_persistent_id("progress_minimize"), Sense::click());
-        resp.widget_info(|| WidgetInfo::labeled(Role::Button, true, "Minimize"));
+        resp.widget_info(|| WidgetInfo::labeled(Role::Button, true, tr("Minimize")));
         let c = if resp.hovered() { Token::Ink1 } else { Token::Ink3 };
         icons::close(ui.painter(), close, theme.color(c));
-        if resp.on_hover_text("Minimize").clicked() {
+        if resp.on_hover_text(tr("Minimize")).clicked() {
             self.ui.progress_minimized = true;
         }
     }
@@ -714,39 +715,39 @@ impl LaApp {
             return None;
         }
         if s.open_error.is_some() {
-            return Some("The device was disconnected. Reconnect it or start a new session.".into());
+            return Some(tr("The device was disconnected. Reconnect it or start a new session.").into());
         }
         // An opened file records when its kind of device is here.
         if s.is_read_only() {
-            return self
-                .matching_device()
-                .is_none()
-                .then(|| format!("Connect a {} to record with these settings.", s.device.display_name()));
+            return self.matching_device().is_none().then(|| {
+                tr("Connect a {} to record with these settings.").replacen("{}", &s.device.display_name(), 1)
+            });
         }
         if s.caps.is_none() {
-            return Some("Switching device…".into());
+            return Some(tr("Switching device…").into());
         }
         if s.settings.enabled.is_empty() {
-            return Some("Enable at least one channel to record.".into());
+            return Some(tr("Enable at least one channel to record.").into());
         }
         let triggered = s.settings.mode == crate::core::capture::CaptureMode::Triggered;
-        (triggered && !s.settings.trigger.is_valid(&s.settings.enabled)).then(|| "The trigger setup is invalid.".into())
+        (triggered && !s.settings.trigger.is_valid(&s.settings.enabled))
+            .then(|| tr("The trigger setup is invalid.").into())
     }
 
     /// Timer or trigger status above the label column.
     fn capture_status(&self, ui: &Ui, l: &Layout) {
         let Some(p) = self.progress() else { return };
         let text = if let Some((_, remaining)) = &p.timer {
-            format!("Timer {remaining}")
+            tr("Timer {}").replacen("{}", remaining, 1)
         } else {
             match &p.trigger {
                 Some(TriggerProgressUi::Searching { .. }) => {
                     // An animated ellipsis.
                     let n = (ui.input(|i| i.time) * 3.0) as usize % 4;
-                    format!("Waiting{}", ".".repeat(n))
+                    tr("Waiting{}").replacen("{}", &".".repeat(n), 1)
                 }
                 Some(TriggerProgressUi::Triggered { since, .. }) => {
-                    format!("Triggered +{}", crate::core::format::time_short(*since))
+                    tr("Triggered +{}").replacen("{}", &crate::core::format::time_short(*since), 1)
                 }
                 None => return,
             }

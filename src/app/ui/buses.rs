@@ -7,6 +7,7 @@ use crate::app::capture::CaptureData;
 use crate::core::bus::{Bus, BusFormat, Endianness, format_value};
 use crate::core::format::time_short;
 use crate::core::{CaptureTime, ChannelId, ChannelKind, ViewState};
+use crate::l10n::tr;
 use crate::store::{ColumnClass, DigitalChannel};
 use crate::ui::Token;
 use crate::ui::theme::{Theme, ThemeExt};
@@ -111,7 +112,13 @@ fn order_strip(ui: &mut Ui, chips: &[(ChannelId, String, egui::Color32)], theme:
             let size = vec2(galley.size().x + 20.0, 24.0);
             let (rect, resp) = ui.allocate_exact_size(size, Sense::drag());
             let resp = resp.on_hover_cursor(egui::CursorIcon::Grab);
-            resp.widget_info(|| WidgetInfo::labeled(Role::Button, true, format!("Wire {k}: {ident}")));
+            resp.widget_info(|| {
+                WidgetInfo::labeled(
+                    Role::Button,
+                    true,
+                    tr("Wire {}: {}").replacen("{}", &k.to_string(), 1).replacen("{}", ident, 1),
+                )
+            });
             let held = resp.dragged();
             let p = ui.painter();
             let fill = if held { theme.color(Token::Card) } else { theme.color(Token::Deck) };
@@ -225,7 +232,7 @@ impl LaApp {
                             format_value(raw, bits, BusFormat::Hex, false),
                             format_value(raw, bits, BusFormat::Decimal, bus.signed),
                             format_value(raw, bits, BusFormat::Binary, false),
-                            format!("at {at}, for {dur}"),
+                            tr("at {}, for {}").replacen("{}", &at, 1).replacen("{}", &dur, 1),
                         ];
                         let id = ui.make_persistent_id(("bus_tip", g.channel));
                         ui.interact(r.intersect(p.clip_rect()), id, Sense::hover()).on_hover_ui(|ui| {
@@ -302,20 +309,20 @@ impl LaApp {
             .collect::<Vec<_>>();
         let mut channels = channels;
         channels.sort_by_key(|c| c.0);
-        let title = if d.editing.is_some() { "Edit Group" } else { "Group Channels" };
+        let title = if d.editing.is_some() { tr("Edit Group") } else { tr("Group Channels") };
         let (mut close, mut done) = (false, false);
         let before = d.selected.clone();
         let resp = Modal::new(Id::unique("bus_dialog")).frame(super::dialogs::modal_frame(ctx)).show(ctx, |ui| {
             ui.set_width(460.0);
             super::help::title_row(ui, title, &mut close);
             ui.add_space(12.0);
-            ui.label(egui::RichText::new("Channels").color(theme.color(Token::Ink3)));
+            ui.label(egui::RichText::new(tr("Channels")).color(theme.color(Token::Ink3)));
             egui::ScrollArea::vertical().max_height(220.0).show(ui, |ui| {
                 egui::Grid::new("bus_channels").num_columns(4).spacing(vec2(16.0, 4.0)).show(ui, |ui| {
                     for (k, (c, label, other)) in channels.iter().enumerate() {
                         let mut on = d.selected.contains(c);
                         let text = match other {
-                            Some(g) => format!("{label} (in {g})"),
+                            Some(g) => tr("{} (in {})").replacen("{}", label, 1).replacen("{}", g, 1),
                             None => label.clone(),
                         };
                         let r = ui.add_enabled(other.is_none(), Checkbox::new(&mut on, &text));
@@ -333,7 +340,7 @@ impl LaApp {
                 });
             });
             ui.add_space(12.0);
-            ui.label(egui::RichText::new("Wire order").color(theme.color(Token::Ink3)));
+            ui.label(egui::RichText::new(tr("Wire order")).color(theme.color(Token::Ink3)));
             ui.add_space(4.0);
             let chips: Vec<(ChannelId, String, egui::Color32)> = d
                 .selected
@@ -345,18 +352,19 @@ impl LaApp {
                 d.selected.insert(to, c);
             }
             let msb = match d.endianness {
-                Endianness::MsbFirst => "most",
-                Endianness::LsbFirst => "least",
+                Endianness::MsbFirst => tr("most"),
+                Endianness::LsbFirst => tr("least"),
             };
             let hint = match d.selected.len() {
-                0 => "Check one or more channels.".to_owned(),
-                1 => "Check more channels to combine them into one value.".to_owned(),
-                _ => format!("Drag to reorder. The first channel is the {msb} significant bit."),
+                0 => tr("Check one or more channels.").to_owned(),
+                1 => tr("Check more channels to combine them into one value.").to_owned(),
+                _ => tr("Drag to reorder. The first channel is the {} significant bit.").replacen("{}", msb, 1),
             };
             ui.label(egui::RichText::new(hint).small().color(theme.color(Token::Ink3)));
             ui.add_space(12.0);
-            let edit = ui.add(egui::TextEdit::singleline(&mut d.name).hint_text("Name").desired_width(f32::INFINITY));
-            super::label_text_edit(&edit, &d.name, "Name");
+            let edit =
+                ui.add(egui::TextEdit::singleline(&mut d.name).hint_text(tr("Name")).desired_width(f32::INFINITY));
+            super::label_text_edit(&edit, &d.name, tr("Name"));
             if edit.changed() {
                 d.name_typed = true;
             }
@@ -364,27 +372,27 @@ impl LaApp {
             ui.horizontal(|ui| {
                 let names: Vec<&str> = BusFormat::ALL.iter().map(|f| f.label()).collect();
                 let mut i = BusFormat::ALL.iter().position(|f| *f == d.format).unwrap_or(0);
-                ui.allocate_ui(vec2(140.0, 32.0), |ui| ui.add(Dropdown::new("Format", &mut i, &names)));
+                ui.allocate_ui(vec2(140.0, 32.0), |ui| ui.add(Dropdown::new(tr("Format"), &mut i, &names)));
                 d.format = BusFormat::ALL[i];
                 let names: Vec<&str> = Endianness::ALL.iter().map(|e| e.label()).collect();
                 let mut i = Endianness::ALL.iter().position(|e| *e == d.endianness).unwrap_or(0);
                 // A No Data group has no value to order or sign.
                 let valued = d.format.has_value();
                 ui.add_enabled_ui(valued, |ui| {
-                    ui.allocate_ui(vec2(200.0, 32.0), |ui| ui.add(Dropdown::new("Endianness", &mut i, &names)));
+                    ui.allocate_ui(vec2(200.0, 32.0), |ui| ui.add(Dropdown::new(tr("Endianness"), &mut i, &names)));
                 });
                 d.endianness = Endianness::ALL[i];
             });
-            ui.add_enabled(d.format.has_value(), Checkbox::new(&mut d.signed, "Signed"));
+            ui.add_enabled(d.format.has_value(), Checkbox::new(&mut d.signed, tr("Signed")));
             ui.add_space(16.0);
             ui.horizontal(|ui| {
                 let ok = !d.selected.is_empty();
                 ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                    let label = if d.editing.is_some() { "Save" } else { "Create" };
+                    let label = if d.editing.is_some() { tr("Save") } else { tr("Create") };
                     if ui.add_enabled(ok, Button::primary(label)).clicked() {
                         done = true;
                     }
-                    if ui.add(Button::secondary("Cancel")).clicked() {
+                    if ui.add(Button::secondary(tr("Cancel"))).clicked() {
                         close = true;
                     }
                 });

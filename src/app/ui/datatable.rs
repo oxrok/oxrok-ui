@@ -6,6 +6,7 @@ use crate::app::LaApp;
 use crate::core::CaptureTime;
 use crate::core::format::si_sig;
 use crate::decode::{Radix, all_rows};
+use crate::l10n::tr;
 use crate::ui::Token;
 use crate::ui::icons;
 use crate::ui::theme::ThemeExt;
@@ -348,12 +349,15 @@ impl LaApp {
         self.refresh_table();
         let c = &self.ui.table;
         let Some(pos) = c.rows.iter().position(|r| r.analyzer == analyzer && r.frame == frame) else {
-            self.toast(Toast::new(ToastKind::Info, "This result isn't in the table yet; it's still being processed"));
+            self.toast(Toast::new(
+                ToastKind::Info,
+                tr("This result isn't in the table yet; it's still being processed"),
+            ));
             return;
         };
         let visible = if c.query.is_empty() { Some(pos) } else { c.filtered.iter().position(|&i| i as usize == pos) };
         let Some(k) = visible else {
-            self.toast(Toast::new(ToastKind::Info, "This result doesn't match the current table search"));
+            self.toast(Toast::new(ToastKind::Info, tr("This result doesn't match the current table search")));
             return;
         };
         let r = c.rows[pos];
@@ -372,7 +376,7 @@ impl LaApp {
             s.analyzers.iter().any(|x| *x.out.status.lock() == crate::decode::runner::Status::Running)
         });
         if busy {
-            let t = Toast::new(ToastKind::Info, "Copy will be available after processing completes")
+            let t = Toast::new(ToastKind::Info, tr("Copy will be available after processing completes"))
                 .lifetime(Duration::from_secs(5));
             self.toast(t);
             return;
@@ -405,11 +409,11 @@ impl LaApp {
         ui.horizontal(|ui| {
             ui.set_height(40.0);
             ui.add_space(16.0);
-            ui.label(egui::RichText::new("Data").size(17.0).color(theme.color(Token::Ink1)));
+            ui.label(egui::RichText::new(tr("Data")).size(17.0).color(theme.color(Token::Ink1)));
             let tip = if self.ui.data_mode == DataMode::Terminal {
-                "Results are not in time order when more than one analyzer streams to the terminal."
+                tr("Results are not in time order when more than one analyzer streams to the terminal.")
             } else {
-                "The decoded results of every analyzer, in time order."
+                tr("The decoded results of every analyzer, in time order.")
             };
             super::panels::help_icon(ui, tip);
             // Aggregated progress.
@@ -432,8 +436,10 @@ impl LaApp {
             }
             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                 ui.add_space(12.0);
-                let modes: [(DataMode, &str, Icon); 2] =
-                    [(DataMode::Terminal, "Terminal", icons::terminal), (DataMode::Table, "Data Table", icons::grid)];
+                let modes: [(DataMode, &str, Icon); 2] = [
+                    (DataMode::Terminal, tr("Terminal"), icons::terminal),
+                    (DataMode::Table, tr("Data Table"), icons::grid),
+                ];
                 for (mode, label, icon) in modes {
                     let (r, resp) = ui.allocate_exact_size(vec2(28.0, 28.0), Sense::click());
                     let on = self.ui.data_mode == mode;
@@ -466,10 +472,10 @@ impl LaApp {
             let matches_w = if matches.is_some() { 84.0 } else { 0.0 };
             let r = ui.add(
                 egui::TextEdit::singleline(&mut typed)
-                    .hint_text("Search results…")
+                    .hint_text(tr("Search results…"))
                     .desired_width(ui.available_width() - 16.0 - 2.0 * 32.0 - matches_w),
             );
-            super::label_text_edit(&r, &typed, "Search table");
+            super::label_text_edit(&r, &typed, tr("Search table"));
             if std::mem::take(&mut self.ui.table_focus) {
                 r.request_focus();
             }
@@ -482,7 +488,8 @@ impl LaApp {
                 ui.ctx().request_repaint_after(SEARCH_DEBOUNCE);
             }
             if let Some(n) = matches {
-                let text = if n == 1 { "1 match".to_owned() } else { format!("{n} matches") };
+                let text =
+                    if n == 1 { tr("1 match").to_owned() } else { tr("{} matches").replacen("{}", &n.to_string(), 1) };
                 ui.label(egui::RichText::new(text).color(theme.color(Token::Ink4)));
             }
             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
@@ -529,6 +536,7 @@ impl LaApp {
         let mut x = hr.left() + 18.0 - h;
         for (name, w) in COLUMNS {
             let font = FontId::new(13.0, Text::Lead.font_id().family);
+            let name = if name == "Start" { tr("Start Time") } else { tr(name) };
             hp.text(pos2(x + 6.0, hr.center().y), Align2::LEFT_CENTER, name, font, theme.color(Token::Ink1));
             x += w;
         }
@@ -583,7 +591,7 @@ impl LaApp {
             p.rect_filled(rect, 0.0, theme.color(bg));
             let Some(cells) = self.cells(r) else {
                 let at = rect.left_center() + vec2(24.0 - h, 0.0);
-                p.text(at, Align2::LEFT_CENTER, "Loading", Text::Prose.font_id(), theme.color(Token::Ink4));
+                p.text(at, Align2::LEFT_CENTER, tr("Loading"), Text::Prose.font_id(), theme.color(Token::Ink4));
                 continue;
             };
             let color = self
@@ -639,9 +647,9 @@ impl LaApp {
             if ui.rect_contains_pointer(rect) {
                 let g = Rect::from_center_size(pos2(rect.right() - 16.0, rect.center().y), vec2(18.0, 18.0));
                 let gr = ui.interact(g, ui.make_persistent_id(("table_goto", r.analyzer, r.frame)), Sense::click());
-                gr.widget_info(|| WidgetInfo::labeled(Role::Button, true, "Go to data"));
+                gr.widget_info(|| WidgetInfo::labeled(Role::Button, true, tr("Go to data")));
                 icons::goto_arrow(ui.painter(), g, theme.color(Token::Ink2));
-                let gr = gr.on_hover_text("Go to data / Double click to zoom");
+                let gr = gr.on_hover_text(tr("Go to data / Double click to zoom"));
                 if gr.double_clicked() {
                     acts.push((k, Act::Zoom));
                 } else if gr.clicked() {
@@ -702,11 +710,11 @@ impl LaApp {
             .iter()
             .zip(self.ui.table.unsearched)
             .filter(|(_, off)| *off)
-            .map(|(&c, _)| COLUMNS[c].0)
+            .map(|(&c, _)| tr(COLUMNS[c].0))
             .collect();
         let count = hidden.len() + unsearched.len();
         let (r, resp) = ui.allocate_exact_size(vec2(28.0, 28.0), Sense::click());
-        resp.widget_info(|| WidgetInfo::labeled(Role::Button, true, "Filter"));
+        resp.widget_info(|| WidgetInfo::labeled(Role::Button, true, tr("Filter")));
         let c = if resp.hovered() || count > 0 { Token::Ink1 } else { Token::Ink3 };
         icons::funnel(ui.painter(), r.shrink(6.0), theme.color(c));
         if count > 0 {
@@ -721,14 +729,14 @@ impl LaApp {
             );
         }
         let tip = if count == 0 {
-            "Filter".to_owned()
+            tr("Filter").to_owned()
         } else {
             let mut parts = Vec::new();
             if !hidden.is_empty() {
-                parts.push(format!("Hidden: {}", hidden.join(", ")));
+                parts.push(tr("Hidden: {}").replacen("{}", &hidden.join(", "), 1));
             }
             if !unsearched.is_empty() {
-                parts.push(format!("Not searched: {}", unsearched.join(", ")));
+                parts.push(tr("Not searched: {}").replacen("{}", &unsearched.join(", "), 1));
             }
             parts.join("\n")
         };
@@ -753,17 +761,17 @@ impl LaApp {
                         let all_none = |ui: &mut Ui| -> Option<bool> {
                             let mut out = None;
                             ui.horizontal(|ui| {
-                                if ui.add(crate::ui::widgets::Button::tertiary("All")).clicked() {
+                                if ui.add(crate::ui::widgets::Button::tertiary(tr("All"))).clicked() {
                                     out = Some(true);
                                 }
-                                if ui.add(crate::ui::widgets::Button::tertiary("None")).clicked() {
+                                if ui.add(crate::ui::widgets::Button::tertiary(tr("None"))).clicked() {
                                     out = Some(false);
                                 }
                             });
                             out
                         };
                         let ui = &mut cols_ui[0];
-                        head(ui, "Show analyzers");
+                        head(ui, tr("Show analyzers"));
                         if let Some(v) = all_none(ui) {
                             show.iter_mut().for_each(|a| a.2 = v);
                         }
@@ -771,15 +779,15 @@ impl LaApp {
                             ui.add(crate::ui::widgets::Checkbox::new(on, name.as_str()));
                         }
                         let ui = &mut cols_ui[1];
-                        head(ui, "Search in columns");
+                        head(ui, tr("Search in columns"));
                         if let Some(v) = all_none(ui) {
                             cols = [v; 3];
                         }
                         for (name, _) in &COLUMNS[1..3] {
-                            ui.add_enabled(false, crate::ui::widgets::Checkbox::new(&mut false, name));
+                            ui.add_enabled(false, crate::ui::widgets::Checkbox::new(&mut false, tr(name)));
                         }
                         for (i, &c) in SEARCHABLE.iter().enumerate() {
-                            ui.add(crate::ui::widgets::Checkbox::new(&mut cols[i], COLUMNS[c].0));
+                            ui.add(crate::ui::widgets::Checkbox::new(&mut cols[i], tr(COLUMNS[c].0)));
                         }
                     });
                 });
@@ -805,7 +813,7 @@ impl LaApp {
         let done = !s.state.is_busy()
             && s.analyzers.iter().all(|a| *a.out.status.lock() == crate::decode::runner::Status::Complete);
         let (r, resp) = ui.allocate_exact_size(vec2(28.0, 28.0), if done { Sense::click() } else { Sense::hover() });
-        resp.widget_info(|| WidgetInfo::labeled(Role::Button, done, "Export Table"));
+        resp.widget_info(|| WidgetInfo::labeled(Role::Button, done, tr("Export Table")));
         let c = if !done {
             Token::Ink5
         } else if resp.hovered() {
@@ -814,7 +822,7 @@ impl LaApp {
             Token::Ink3
         };
         icons::export(ui.painter(), r.shrink(6.0), theme.color(c));
-        let tip = if done { "Export Table" } else { "Available when decoding finishes" };
+        let tip = if done { tr("Export Table") } else { tr("Available when decoding finishes") };
         if resp.on_hover_text(tip).clicked() {
             self.open_table_export(None);
         }
@@ -840,19 +848,19 @@ impl LaApp {
                 ui.set_width(520.0);
                 ui.horizontal(|ui| {
                     ui.label(
-                        egui::RichText::new("Export Analyzer Data")
+                        egui::RichText::new(tr("Export Analyzer Data"))
                             .text_style(Text::Display.style())
                             .color(theme.color(Token::Ink1)),
                     );
                     ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                        if super::ranges::icon_button(ui, "Close", icons::close).clicked() {
+                        if super::ranges::icon_button(ui, tr("Close"), icons::close).clicked() {
                             close = true;
                         }
                     });
                 });
                 ui.add_space(16.0);
                 ui.horizontal_wrapped(|ui| {
-                    ui.label(egui::RichText::new("Analyzers").color(theme.color(Token::Ink3)));
+                    ui.label(egui::RichText::new(tr("Analyzers")).color(theme.color(Token::Ink3)));
                     ui.add_space(12.0);
                     for (_, name, on) in &mut d.analyzers {
                         ui.add(crate::ui::widgets::Checkbox::new(on, name.as_str()));
@@ -860,18 +868,18 @@ impl LaApp {
                 });
                 ui.add_space(10.0);
                 if searching {
-                    ui.add(crate::ui::widgets::Checkbox::new(&mut d.apply_search, "Apply table search"));
+                    ui.add(crate::ui::widgets::Checkbox::new(&mut d.apply_search, tr("Apply table search")));
                 }
                 if has_selection {
-                    ui.add(crate::ui::widgets::Checkbox::new(&mut d.selected_only, "Selected rows only"));
+                    ui.add(crate::ui::widgets::Checkbox::new(&mut d.selected_only, tr("Selected rows only")));
                 }
                 ui.add_space(20.0);
                 ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                     let any = d.analyzers.iter().any(|a| a.2);
-                    if ui.add_enabled(any, crate::ui::widgets::Button::primary("Save As…")).clicked() {
+                    if ui.add_enabled(any, crate::ui::widgets::Button::primary(tr("Save As…"))).clicked() {
                         save = true;
                     }
-                    if ui.add(crate::ui::widgets::Button::secondary("Cancel")).clicked() {
+                    if ui.add(crate::ui::widgets::Button::secondary(tr("Cancel"))).clicked() {
                         close = true;
                     }
                 });
@@ -884,7 +892,8 @@ impl LaApp {
             let ctx = ctx.clone();
             std::thread::spawn(move || {
                 let filters = [("CSV".to_owned(), vec!["csv".to_owned()])];
-                let path = dialogs.save_file("Export Analyzer Data", start.as_deref(), "analyzer-data.csv", &filters);
+                let path =
+                    dialogs.save_file(tr("Export Analyzer Data"), start.as_deref(), "analyzer-data.csv", &filters);
                 let _ = tx.send(crate::app::AppEvent::TableExportFile(rows, path));
                 ctx.request_repaint();
             });
@@ -1027,7 +1036,7 @@ impl LaApp {
             .show(ui, |ui| {
                 ui.set_min_size(min);
                 let r = ui.add(egui::Label::new(job).selectable(true).wrap());
-                r.widget_info(|| WidgetInfo::labeled(Role::Label, true, format!("Terminal: {text}")));
+                r.widget_info(|| WidgetInfo::labeled(Role::Label, true, tr("Terminal: {}").replacen("{}", &text, 1)));
                 let lines = runs.len();
                 let visible = ui.clip_rect().intersect(r.rect);
                 // Follow the newest lines while the bottom is in view.
@@ -1043,9 +1052,9 @@ impl LaApp {
         if at.is_positive() && ui.rect_contains_pointer(at) {
             let b = Rect::from_center_size(pos2(at.right() - 24.0, at.top() + 24.0), vec2(20.0, 20.0));
             let resp = ui.interact(b, ui.make_persistent_id("terminal_clear"), Sense::click());
-            resp.widget_info(|| WidgetInfo::labeled(Role::Button, true, "Clear Terminal"));
+            resp.widget_info(|| WidgetInfo::labeled(Role::Button, true, tr("Clear Terminal")));
             icons::trash(ui.painter(), b, theme.color(Token::Ink2));
-            if resp.on_hover_text("Clear Terminal").clicked() {
+            if resp.on_hover_text(tr("Clear Terminal")).clicked() {
                 let counts: Vec<(u32, usize)> = self
                     .session
                     .as_ref()

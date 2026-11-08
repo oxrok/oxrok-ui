@@ -185,10 +185,10 @@ impl LaApp {
             .enumerate()
             .map(|(i, d)| Node::Special {
                 id: format!("{DEVICE}{i}"),
-                label: format!("New Session on {}", self.device_label(d)),
+                label: crate::l10n::tr("New Session on {}").replacen("{}", &self.device_label(d), 1),
                 shortcut: None,
                 enabled: blocked.is_none(),
-                tip: blocked.map(str::to_owned),
+                tip: blocked.map(|b| crate::l10n::tr(b).to_owned()),
             })
             .collect();
         // The help row closes the Devices list.
@@ -200,7 +200,7 @@ impl LaApp {
             Node::Sep,
             c("capture.copy_cli"),
             Node::Sep,
-            Node::Sub { label: "Devices".into(), items: devices },
+            Node::Sub { label: crate::l10n::tr("Devices").into(), items: devices },
         ];
         let analyze = vec![
             c("analyzer.add"),
@@ -331,7 +331,7 @@ impl LaApp {
                     }
                 }
                 Node::Sub { label, items } => {
-                    let width = if label == "Open Recent" { 320.0 } else { 240.0 };
+                    let width = if label == crate::l10n::tr("Open Recent") { 320.0 } else { 240.0 };
                     ui.add_enabled_ui(sub_enabled(self, items), |ui| {
                         submenu(ui, label, width, None, |ui| self.draw_nodes(ui, items, out));
                     });

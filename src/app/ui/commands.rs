@@ -18,7 +18,7 @@ impl LaApp {
     /// `Ok` when `id` can run now, else why not (the menus' tooltip).
     pub(crate) fn command_available(&self, id: &str) -> Result<(), &'static str> {
         let s = self.session.as_ref();
-        let need = |ok: bool, why: &'static str| if ok { Ok(()) } else { Err(why) };
+        let need = |ok: bool, why: &'static str| if ok { Ok(()) } else { Err(crate::l10n::tr(why)) };
         let session = || need(s.is_some(), "Open a device or a capture first.");
         let data = || need(s.is_some_and(|s| s.has_data()), "There is no data yet.");
         let finished =
@@ -62,21 +62,23 @@ impl LaApp {
                 )
             }
             id if id.starts_with("nav.") || id.starts_with("analog.") => data(),
-            "session.new" => self.create_blocked().map_or(Ok(()), Err),
+            "session.new" => self.create_blocked().map_or(Ok(()), |why| Err(crate::l10n::tr(why))),
             "session.close" => {
                 session()?;
-                self.active_id().and_then(|id| self.close_refused(id)).map_or(Ok(()), Err)
+                self.active_id().and_then(|id| self.close_refused(id)).map_or(Ok(()), |why| Err(crate::l10n::tr(why)))
             }
             "session.show" | "session.rename" => session(),
             "session.next" | "session.prev" => {
                 need(self.session_count() > 1, "There is only one session.")?;
-                self.switch_blocked().map_or(Ok(()), Err)
+                self.switch_blocked().map_or(Ok(()), |why| Err(crate::l10n::tr(why)))
             }
             "session.goto" => {
                 need(self.session_count() > 1, "There is only one session.")?;
-                self.switch_blocked().map_or(Ok(()), Err)
+                self.switch_blocked().map_or(Ok(()), |why| Err(crate::l10n::tr(why)))
             }
-            id if id.starts_with("session.goto_") => self.switch_blocked().map_or(Ok(()), Err),
+            id if id.starts_with("session.goto_") => {
+                self.switch_blocked().map_or(Ok(()), |why| Err(crate::l10n::tr(why)))
+            }
             "session.close_others" => need(self.session_count() > 1, "There are no other sessions."),
             "marker.add" | "marker.add_pair" | "range.add" | "range.pulse" => data(),
             "analyzer.add" => {

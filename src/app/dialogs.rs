@@ -29,7 +29,7 @@ fn with_filters(mut d: rfd::AsyncFileDialog, filters: &[Filter]) -> rfd::AsyncFi
 
 impl FileDialogs for NativeDialogs {
     fn pick_folder(&self, start: Option<&Path>) -> Option<PathBuf> {
-        let mut d = rfd::AsyncFileDialog::new().set_title("Choose folder for export");
+        let mut d = rfd::AsyncFileDialog::new().set_title(crate::l10n::tr("Choose folder"));
         if let Some(s) = start {
             d = d.set_directory(s);
         }

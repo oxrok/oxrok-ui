@@ -27,6 +27,10 @@ impl LaApp {
         match id {
             "capture.toggle" => {
                 session()?;
+                need(
+                    !s.is_some_and(|s| s.is_import() && !s.state.is_busy()),
+                    "An imported file has no device to record with.",
+                )?;
                 need(!s.is_some_and(|s| s.state == CaptureState::Stopping), "The capture is stopping.")
             }
             "file.save" | "file.save_as" => {

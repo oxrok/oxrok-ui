@@ -90,6 +90,12 @@ fn imports_and_sr_round_trip() {
     h.run();
     assert!(h.query_by_role_and_label(egui::Role::Button, "Device").is_none(), "no Device tab");
     h.get_by_role_and_label(egui::Role::Button, "Analyzers");
+    h.get_by_role_and_label(egui::Role::Button, "Pause analyzers");
+    assert_eq!(h.state().settings().inspector.tab, "device", "the Device choice is kept for device sessions");
+    // Start Recording is greyed out in the menus; Space still explains why.
+    h.key_press(Key::Space);
+    h.run();
+    assert!(h.state().toasts().iter().any(|t| t.body.contains("no device to record with")));
 
     // A headerless .bin asks first: the Import Options dialog.
     let bin = dir.path().join("capture.bin");

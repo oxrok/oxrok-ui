@@ -8,7 +8,6 @@
 //! The language is process-wide, so every test that changes it lives in
 //! this binary, and they run one at a time (`LANGUAGE`).
 
-use egui::Key;
 use egui_kittest::Harness;
 use oxrok_ui::l10n::{self, Language, tr};
 use oxrok_ui::ui::theme::ThemeKind;
@@ -66,7 +65,7 @@ fn language_picker_switches_the_ui() {
         .with_size([1280.0, 800.0])
         .build_eframe(|cc| LaApp::new_for_test(cc, MockBackend::seeded(1)));
     h.run();
-    h.key_press_modifiers(egui::Modifiers::COMMAND, Key::Comma);
+    h.key_press_modifiers(egui::Modifiers::COMMAND, egui::Key::Comma);
     h.run();
     let pick = |h: &mut Harness<'_, LaApp>, name: &str| {
         // The accessible name follows the current language.

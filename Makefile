@@ -16,6 +16,9 @@ RUN_PROFILE := $(if $(filter release,$(PROFILE)),--release)
 BENCH ?= $(if $(strip $(SIGROK_PREFIX)),$(dir $(abspath $(SIGROK_PREFIX))))
 SIGGEN_FW ?= $(if $(strip $(BENCH)),$(abspath $(BENCH))/esp32/siggen)
 PIO ?= pio
+# The codesign identity for `make bundle` (from
+# `security find-identity -v -p codesigning`); ad-hoc when empty.
+SIGN_IDENTITY ?=
 
 .PHONY: help notices firmware-deps perf bundle run run-mock test test-oxrok test-hil siggen siggen-loop siggen-flash oxrok-scan oxrok-info check screenshots icons clean
 
@@ -34,7 +37,8 @@ help:
 	@echo "  make siggen-flash  build and upload the generator firmware ($(SIGGEN_FW))"
 	@echo "  make check         rustfmt + clippy, as in CI"
 	@echo "  make perf          the performance budgets, in release"
-	@echo "  make bundle        macOS: ad-hoc signed .app and .dmg in dist/ (packaging/)"
+	@echo "  make bundle        macOS: .app and .dmg in dist/ (packaging/), with the oxrok CLI;"
+	@echo "                     signed with SIGN_IDENTITY (from `security find-identity -v -p codesigning`), ad-hoc when empty"
 	@echo "  make screenshots   regenerate docs/screenshots"
 	@echo "  make notices       regenerate the About dialog's third-party notices"
 	@echo "  make firmware-deps fetch sigrok-util's firmware scripts and the fx2lafw firmware into vendor/"
@@ -119,13 +123,27 @@ firmware-deps:
 	curl -fsSL $(FX2LAFW_URL) | tar -xz -C vendor/sigrok-firmware --strip-components=1
 	@ls vendor/sigrok-firmware | grep -c '\.fw$$' | xargs -I{} echo "vendor/sigrok-firmware: {} fx2lafw files"
 
-# 22 Packaging (macOS): an ad-hoc signed .app and .dmg in dist/, with the
-# decoders and vendor/ (oxrok and RustPython are in the binary).
+# 22 Packaging (macOS): a .app and .dmg in dist/, with the decoders,
+# vendor/ and the oxrok CLI (oxrok and RustPython are in the binaries).
+# Signed with SIGN_IDENTITY (a codesign identity), ad-hoc when empty.
 VERSION := $(shell sed -n 's/^version = "\(.*\)"/\1/p' Cargo.toml | head -1)
+# The oxrok CLI, built from the crates.io source at the version Cargo.toml
+# pins, against the package's own Cargo.lock. `cargo install` re-resolves
+# and picks a conflicting malachite-bigint, so the binary is built directly.
+OXROK_VERSION := $(shell grep '^oxrok = ' Cargo.toml | sed -n 's/.*version = "=\{0,1\}\([^"]*\)".*/\1/p')
+# Absolute build dir, shared by the app and the CLI so the CLI reuses the
+# app's cached RustPython/nusb artifacts.
+TARGET_DIR := $(abspath $(if $(CARGO_TARGET_DIR),$(CARGO_TARGET_DIR),target))
 bundle:
-	$(CARGO) build --release $(if $(APP_FEATURES),--features $(APP_FEATURES))
-	python3 packaging/macos/bundle.py --bin $${CARGO_TARGET_DIR:-target}/release/oxrok-ui --version $(VERSION) --out dist
+	CARGO_TARGET_DIR=$(TARGET_DIR) $(CARGO) build --release $(if $(APP_FEATURES),--features $(APP_FEATURES))
+	@src=$$(ls -d $${CARGO_HOME:-$$HOME/.cargo}/registry/src/*/oxrok-$(OXROK_VERSION) 2>/dev/null | head -1); \
+	if [ -z "$$src" ]; then echo "oxrok $(OXROK_VERSION) source not in the cargo registry (run '$(CARGO) fetch' first)"; exit 1; fi; \
+	work=$$(mktemp -d); trap 'rm -rf "$$work"' EXIT; \
+	cp -R "$$src" "$$work/oxrok"; \
+	(cd "$$work/oxrok" && CARGO_TARGET_DIR=$(TARGET_DIR) $(CARGO) build --release --no-default-features --features cli,nusb,rustpython)
+	python3 packaging/macos/bundle.py --bin "$(TARGET_DIR)/release/oxrok-ui" --cli "$(TARGET_DIR)/release/oxrok" --version $(VERSION) --out dist $(if $(SIGN_IDENTITY),--sign "$(SIGN_IDENTITY)")
 	"dist/Oxrok UI.app/Contents/MacOS/oxrok-ui" --self-test
+	"dist/Oxrok UI.app/Contents/MacOS/oxrok" --version | head -n 1
 
 # The performance budgets, timed in release.
 perf:

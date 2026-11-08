@@ -204,6 +204,9 @@ mod tests {
         assert_eq!(family_of("fx2lafw-saleae-logic.fw").script, None);
         assert_eq!(family_of("odd.bin").title, "this device");
         assert!(missing_tools(&["surely-not-a-tool-xyz"]) == ["surely-not-a-tool-xyz"]);
+        // `sh` is a Unix shell; it isn't on Windows, where the firmware
+        // scripts (and this check) don't apply.
+        #[cfg(not(target_os = "windows"))]
         assert!(missing_tools(&["sh"]).is_empty());
         let paths = [(PathBuf::from("/usr/share/sigrok-firmware"), true)];
         assert_eq!(user_firmware_dir(&paths).file_name().unwrap(), "sigrok-firmware");

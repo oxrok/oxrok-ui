@@ -347,7 +347,9 @@ impl LaApp {
                     let names: Vec<&str> = Language::ALL.iter().map(|l| l.name()).collect();
                     let before = Language::ALL.iter().position(|l| *l == s.language).unwrap_or(0);
                     let mut i = before;
-                    ui.allocate_ui(vec2(200.0, FIELD_H), |ui| ui.add(Dropdown::new("Language", &mut i, &names)));
+                    ui.allocate_ui(vec2(200.0, FIELD_H), |ui| {
+                        ui.add(Dropdown::new(crate::l10n::tr("Language"), &mut i, &names))
+                    });
                     if i != before {
                         s.language = Language::ALL[i];
                         let lang = s.language;

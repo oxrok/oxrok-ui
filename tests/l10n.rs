@@ -69,7 +69,8 @@ fn language_picker_switches_the_ui() {
     h.key_press_modifiers(egui::Modifiers::COMMAND, Key::Comma);
     h.run();
     let pick = |h: &mut Harness<'_, LaApp>, name: &str| {
-        h.get_by_role_and_label(egui::accesskit::Role::ComboBox, "Language").click();
+        // The accessible name follows the current language.
+        h.get_by_role_and_label(egui::accesskit::Role::ComboBox, tr("Language")).click();
         h.run();
         h.get_by_role_and_label(egui::accesskit::Role::ListBoxOption, name).click();
         h.run_steps(3);

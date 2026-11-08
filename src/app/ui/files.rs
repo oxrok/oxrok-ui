@@ -499,11 +499,13 @@ impl LaApp {
     }
 
     pub(crate) fn toast_no_matching_device(&mut self) {
-        let model = self.session.as_ref().map(|s| s.device.display_name()).unwrap_or_default();
-        self.toast(
-            Toast::new(ToastKind::Info, format!("Connect a {model} to record with these settings."))
-                .id("no-matching-device"),
-        );
+        let Some(s) = self.session.as_ref() else { return };
+        let text = if s.is_import() {
+            super::graph::import_cannot_record(s)
+        } else {
+            format!("Connect a {} to record with these settings.", s.device.display_name())
+        };
+        self.toast(Toast::new(ToastKind::Info, text).id("no-matching-device"));
     }
 
     /// *Replace Data* / the banner's *Record Here*: this session
@@ -994,17 +996,20 @@ impl LaApp {
         let current =
             self.session.as_ref().and_then(|s| s.record_choice).unwrap_or(self.settings.capture.record_on_opened);
         let mut picked = None;
-        for (choice, label, short) in choices {
-            let shown = if compact { short } else { label };
-            let resp = choice_pill(&mut child, shown, label, current == choice);
-            let resp = if compact { resp.on_hover_text(label) } else { resp };
-            if resp.clicked() {
-                picked = Some(choice);
+        // An imported file has no device to record with: no choices.
+        if !self.session.as_ref().is_some_and(|s| s.is_import()) {
+            for (choice, label, short) in choices {
+                let shown = if compact { short } else { label };
+                let resp = choice_pill(&mut child, shown, label, current == choice);
+                let resp = if compact { resp.on_hover_text(label) } else { resp };
+                if resp.clicked() {
+                    picked = Some(choice);
+                }
+                child.add_space(4.0);
             }
             child.add_space(4.0);
+            child.label(egui::RichText::new("Record:").color(theme.color(Token::Ink4)));
         }
-        child.add_space(4.0);
-        child.label(egui::RichText::new("Record:").color(theme.color(Token::Ink4)));
         let right = child.min_rect().left();
         // A choice closes the banner for this session (the toolbar icon
         // brings it back).

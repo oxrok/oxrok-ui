@@ -78,6 +78,18 @@ fn imports_and_sr_round_trip() {
     assert_eq!(&names[..2], ["clk", "data"], "the single VCD scope is dropped");
     h.run();
     h.get_by_label("Opened from bus.vcd");
+    // No device recorded it: nothing to record with, no Device tab.
+    let why = h.state().capture_blocked().expect("an import can't record");
+    assert!(why.contains("no device to record with"), "{why}");
+    assert!(h.query_by_label("Will record here").is_none(), "no Record choices in the banner");
+    {
+        let st = h.state_mut().settings_mut();
+        st.inspector.open = true;
+        st.inspector.tab = "device".into();
+    }
+    h.run();
+    assert!(h.query_by_role_and_label(egui::Role::Button, "Device").is_none(), "no Device tab");
+    h.get_by_role_and_label(egui::Role::Button, "Analyzers");
 
     // A headerless .bin asks first: the Import Options dialog.
     let bin = dir.path().join("capture.bin");

@@ -39,7 +39,11 @@ impl LaApp {
                 need(self.settings.files.recent_files.iter().any(|p| p.exists()), "No recent captures.")
             }
             "file.export" => finished(),
-            "capture.copy_cli" => session(),
+            "capture.copy_cli" => {
+                session()?;
+                need(!s.is_some_and(|s| s.is_import()), "An imported file has no device to record with.")
+            }
+            "panel.device" => need(!s.is_some_and(|s| s.is_import()), "An imported file has no device."),
             "view.wire_status" => {
                 session()?;
                 need(s.is_some_and(|s| !s.is_read_only()), "An opened file has no live pins.")?;
@@ -106,7 +110,7 @@ impl LaApp {
 
     /// Checkable commands: their state (menus' ✓, the palette's label).
     pub(crate) fn command_checked(&self, id: &str) -> Option<bool> {
-        let tab = |p: &str| self.settings.inspector.open && self.settings.inspector.tab == p;
+        let tab = |p: &str| self.settings.inspector.open && self.inspector_tab() == p;
         match id {
             "capture.repeat" => Some(self.session.as_ref().is_some_and(|s| s.settings.repeat)),
             "analyzer.pause" => Some(self.ui.analyzers_paused),
@@ -388,7 +392,7 @@ impl LaApp {
 
     /// `Ctrl/Cmd+A`: markers when their tab is selected, else measurements.
     fn select_all_annotations(&mut self) {
-        let tab = self.settings.inspector.tab.clone();
+        let tab = self.inspector_tab().to_owned();
         let Some(s) = self.session.as_mut() else { return };
         if tab == super::markers::MARKERS_PANEL {
             s.markers.select_all();

@@ -59,7 +59,7 @@ pub fn spi_mode0(sck: &DigitalChannel, data: &DigitalChannel, cs: &DigitalChanne
             }
             y = t;
         }
-        frames.push(bits.chunks_exact(8).map(|b| b.iter().fold(0u8, |v, &x| v << 1 | x as u8)).collect());
+        frames.push(bits.as_chunks::<8>().0.iter().map(|b| b.iter().fold(0u8, |v, &x| v << 1 | x as u8)).collect());
         x = hi;
     }
     frames

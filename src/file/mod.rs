@@ -286,8 +286,8 @@ fn read_digital(r: &mut impl Read) -> Result<DigitalChannel> {
     while left > 0 {
         let n = left.min(BATCH as u64) as usize;
         r.read_exact(&mut buf[..n * 8])?;
-        for d in buf[..n * 8].chunks_exact(8) {
-            let delta = u64::from_le_bytes(d.try_into().unwrap());
+        for &d in buf[..n * 8].as_chunks::<8>().0 {
+            let delta = u64::from_le_bytes(d);
             prev = prev
                 .checked_add(delta)
                 .filter(|&t| t < end && delta > 0)
@@ -312,7 +312,7 @@ fn read_analog(r: &mut impl Read) -> Result<AnalogChannel> {
         let n = left.min(BATCH as u64) as usize;
         r.read_exact(&mut buf[..n * 4])?;
         values.clear();
-        values.extend(buf[..n * 4].chunks_exact(4).map(|b| f32::from_le_bytes(b.try_into().unwrap())));
+        values.extend(buf[..n * 4].as_chunks::<4>().0.iter().map(|&b| f32::from_le_bytes(b)));
         ch.push(at, &values).map_err(|_| FileError::Format("analog samples out of order".into()))?;
         at += n as u64;
         left -= n as u64;

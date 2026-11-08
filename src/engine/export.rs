@@ -584,7 +584,7 @@ mod tests {
         assert_eq!(n, 3);
         assert_eq!(u32::from_le_bytes(buf[12..16].try_into().unwrap()), 1);
         assert_eq!(u64::from_le_bytes(buf[40..48].try_into().unwrap()), 2);
-        let v: Vec<f32> = buf[48..].chunks_exact(4).map(|b| f32::from_le_bytes(b.try_into().unwrap())).collect();
+        let v: Vec<f32> = buf[48..].as_chunks::<4>().0.iter().map(|&b| f32::from_le_bytes(b)).collect();
         assert_eq!(v, [0.0, 1.0, 2.0]);
     }
 

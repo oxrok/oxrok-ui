@@ -67,7 +67,7 @@ fn cmd(id: &'static str, label: &'static str) -> Node {
 impl LaApp {
     /// The menus in order, titles and entries. `native` leaves out
     /// what the macOS app menu holds instead.
-    pub(crate) fn menu_model(&self, native: bool) -> Vec<(&'static str, Vec<Node>)> {
+    pub(crate) fn menu_model(&self, native: bool) -> Vec<(&'static str, &'static str, Vec<Node>)> {
         let label = |id: &'static str| {
             commands::get(id).map(|c| match id {
                 // The label reflects the state (Capture menu).
@@ -221,12 +221,12 @@ impl LaApp {
             c("help.about"),
         ];
         vec![
-            (crate::l10n::tr("File"), file),
-            (crate::l10n::tr("Edit"), edit),
-            (crate::l10n::tr("View"), view),
-            (crate::l10n::tr("Capture"), capture),
-            (crate::l10n::tr("Analyze"), analyze),
-            (crate::l10n::tr("Help"), help),
+            ("file", crate::l10n::tr("File"), file),
+            ("edit", crate::l10n::tr("Edit"), edit),
+            ("view", crate::l10n::tr("View"), view),
+            ("capture", crate::l10n::tr("Capture"), capture),
+            ("analyze", crate::l10n::tr("Analyze"), analyze),
+            ("help", crate::l10n::tr("Help"), help),
         ]
     }
 
@@ -272,7 +272,7 @@ impl LaApp {
                 ui.spacing_mut().button_padding = egui::vec2(10.0, 2.0);
                 egui::MenuBar::new().ui(ui, |ui| {
                     ui.add_space(4.0);
-                    for (title, nodes) in &model {
+                    for (_id, title, nodes) in &model {
                         let text = egui::RichText::new(*title).text_style(Text::Prose.style());
                         egui::containers::menu::MenuButton::new(text).ui(ui, |ui| {
                             ui.set_width(MENU_W);

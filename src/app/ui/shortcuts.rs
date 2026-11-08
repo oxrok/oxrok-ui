@@ -53,7 +53,7 @@ fn sections() -> Vec<(&'static str, Vec<Row>)> {
                     _ => crate::l10n::tr(c.label).to_owned(),
                 };
                 if let Some((_, second, l)) = PAIRS.iter().find(|p| p.0 == c.id) {
-                    label = (*l).to_owned();
+                    label = crate::l10n::tr(l).to_owned();
                     if let Some(s) = commands::get(second) {
                         alts.extend(alternatives(s));
                     }

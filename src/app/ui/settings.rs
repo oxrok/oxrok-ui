@@ -61,7 +61,7 @@ impl Section {
     /// The item labels, for search.
     fn items(self) -> &'static [&'static str] {
         match self {
-            Section::Appearance => &["Theme", "UI scale", "Show tooltips"],
+            Section::Appearance => &["Theme", "UI scale", "Show tooltips", "Language"],
             Section::Waveform => &[
                 "Color waveforms by channel",
                 "Trace width",

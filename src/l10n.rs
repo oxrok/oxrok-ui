@@ -354,6 +354,18 @@ const ENTRIES: &[(&str, &str, &str)] = &[
     ("Analyzers", "Analizadores", "分析器"),
     ("Add Marker Pair", "Añadir par de marcadores", "添加标记对"),
     ("Keyboard Shortcuts", "Atajos de teclado", "键盘快捷键"),
+
+    // ---- Paired shortcut rows ----
+    ("Previous / Next Edge (hovered row)", "Borde anterior / siguiente (fila señalada)", "上一个/下一个边沿（悬停行）"),
+    ("Previous / Next Result (hovered row)", "Resultado anterior / siguiente (fila señalada)", "上一个/下一个结果（悬停行）"),
+    ("Go to Start / End", "Ir al inicio / final", "转到开头/结尾"),
+    ("Pan Left / Right", "Desplazar izquierda / derecha", "向左/向右平移"),
+    ("Pan Page Left / Right", "Página izquierda / derecha", "向左/向右翻页"),
+    ("Scroll Rows", "Desplazar filas", "滚动行"),
+    ("Y Zoom In / Out", "Acercar / alejar Y", "纵向放大/缩小"),
+    ("Next / Previous Session", "Sesión siguiente / anterior", "下一个/上一个会话"),
+    ("Undo / Redo", "Deshacer / rehacer", "撤销/重做"),
+    ("Previous / Next View", "Vista anterior / siguiente", "上一个/下一个视图"),
 ];
 
 #[cfg(test)]

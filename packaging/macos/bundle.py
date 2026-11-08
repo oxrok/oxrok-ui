@@ -6,7 +6,10 @@ Resources: the decoders of a libsigrokdecode installation (oxrok runs them
 on RustPython), vendor/ firmware (make firmware-deps) and the sigrok-util
 extraction scripts. Signs ad-hoc and makes a .dmg.
 
-    bundle.py --bin target/release/oxrok-ui --version 0.11.0 --out dist [--vendor vendor]
+    bundle.py --bin target/release/oxrok-ui --version 0.11.0 --out dist [--vendor vendor] [--sign "Developer ID Application: …"] [--cli target/oxrok-cli/bin/oxrok]
+
+Without --sign the app is signed ad-hoc. With --cli the oxrok CLI is bundled
+in Contents/MacOS and signed as a leaf before the app.
 """
 import argparse
 import os
@@ -48,6 +51,8 @@ def main():
     ap.add_argument("--out", required=True, type=Path)
     ap.add_argument("--vendor", type=Path, default=Path("vendor"))
     ap.add_argument("--icon", type=Path, default=Path("assets/AppIcon.icns"))
+    ap.add_argument("--sign", default="", help="codesign identity (e.g. from `security find-identity -v -p codesigning`); ad-hoc when empty")
+    ap.add_argument("--cli", type=Path, default=None, help="the oxrok CLI binary to bundle in Contents/MacOS and sign")
     a = ap.parse_args()
 
     app = a.out / f"{APP_NAME}.app"
@@ -58,6 +63,10 @@ def main():
     res.mkdir()
     binary = app / "Contents/MacOS/oxrok-ui"
     shutil.copy2(a.bin, binary)
+    cli = None
+    if a.cli:
+        cli = app / "Contents/MacOS/oxrok"
+        shutil.copy2(a.cli, cli)
     shutil.copy2(a.icon, res / "AppIcon.icns")
     # Written by hand: plistlib needs pyexpat, broken in some Pythons.
     keys = {
@@ -88,9 +97,11 @@ def main():
     if (a.vendor / "sigrok-util").is_dir():
         shutil.copytree(a.vendor / "sigrok-util", res / "sigrok-util", ignore=shutil.ignore_patterns(".git"))
 
-    # Ad-hoc signature, then the app.
-    run("codesign", "--force", "--sign", "-", str(binary))
-    run("codesign", "--force", "--sign", "-", str(app))
+    # Sign each Mach-O leaf first, then the app (ad-hoc without --sign).
+    identity = a.sign or "-"
+    for b in [binary] + ([cli] if cli else []):
+        run("codesign", "--force", "--sign", identity, str(b))
+    run("codesign", "--force", "--sign", identity, str(app))
 
     dmg = a.out / f"Oxrok-UI-{a.version}-macos-{os.uname().machine}.dmg"
     if dmg.exists():

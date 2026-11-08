@@ -49,11 +49,11 @@ fn sections() -> Vec<(&'static str, Vec<Row>)> {
                 }
                 let mut alts = alternatives(c);
                 let mut label = match c.id {
-                    "session.goto" => "Go to Session 1…9".to_owned(),
-                    _ => c.label.to_owned(),
+                    "session.goto" => crate::l10n::tr("Go to Session 1…9").to_owned(),
+                    _ => crate::l10n::tr(c.label).to_owned(),
                 };
                 if let Some((_, second, l)) = PAIRS.iter().find(|p| p.0 == c.id) {
-                    label = (*l).to_owned();
+                    label = crate::l10n::tr(l).to_owned();
                     if let Some(s) = commands::get(second) {
                         alts.extend(alternatives(s));
                     }

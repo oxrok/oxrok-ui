@@ -15,6 +15,7 @@ pub mod decode;
 pub mod engine;
 pub mod file;
 pub mod hil;
+pub mod l10n;
 pub mod oxrok;
 pub mod store;
 pub mod ui;

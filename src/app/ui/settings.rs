@@ -45,7 +45,7 @@ impl Section {
     ];
 
     pub fn label(self) -> &'static str {
-        match self {
+        let en = match self {
             Section::Appearance => "Appearance",
             Section::Waveform => "Waveform",
             Section::TimeLabels => "Time Labels",
@@ -54,13 +54,14 @@ impl Section {
             Section::Decoders => "Decoders",
             Section::History => "Data & History",
             Section::Related => "Related",
-        }
+        };
+        crate::l10n::tr(en)
     }
 
     /// The item labels, for search.
     fn items(self) -> &'static [&'static str] {
         match self {
-            Section::Appearance => &["Theme", "UI scale", "Show tooltips"],
+            Section::Appearance => &["Theme", "UI scale", "Show tooltips", "Language"],
             Section::Waveform => &[
                 "Color waveforms by channel",
                 "Trace width",
@@ -216,7 +217,7 @@ impl LaApp {
                 Frame::new().inner_margin(Margin { left: 32, right: 16, top: 20, bottom: 16 }).show(ui, |ui| {
                     ui.horizontal(|ui| {
                         ui.label(
-                            egui::RichText::new("Settings")
+                            egui::RichText::new(crate::l10n::tr("Settings"))
                                 .text_style(Text::Display.style())
                                 .color(theme.color(Token::Ink1)),
                         );
@@ -240,10 +241,10 @@ impl LaApp {
                     ui.add_space(12.0);
                     let r = ui.add(
                         egui::TextEdit::singleline(&mut d.search)
-                            .hint_text("Search settings")
+                            .hint_text(crate::l10n::tr("Search settings"))
                             .desired_width(NAV_W - 24.0),
                     );
-                    super::label_text_edit(&r, &d.search, "Search settings");
+                    super::label_text_edit(&r, &d.search, crate::l10n::tr("Search settings"));
                 });
                 nav_ui.add_space(12.0);
                 for s in &shown {
@@ -280,7 +281,7 @@ impl LaApp {
                 egui::ScrollArea::vertical().auto_shrink([false, false]).show(&mut c_ui, |ui| {
                     if shown.is_empty() {
                         ui.label(
-                            egui::RichText::new("No settings match")
+                            egui::RichText::new(crate::l10n::tr("No settings match"))
                                 .text_style(Text::Prose.style())
                                 .color(theme.color(Token::Ink3)),
                         );
@@ -302,13 +303,13 @@ impl LaApp {
                 ui.painter().hline(foot.x_range(), foot.top(), Stroke::new(1.0, theme.color(Token::Seam)));
                 Frame::new().inner_margin(Margin::same(24)).show(ui, |ui| {
                     ui.horizontal(|ui| {
-                        if ui.add(Button::secondary("Reset all settings…")).clicked() {
+                        if ui.add(Button::secondary(crate::l10n::tr("Reset all settings…"))).clicked() {
                             after.push(Box::new(|app: &mut LaApp| {
                                 app.ui.confirm = Some(super::dialogs::Confirm::reset_all_settings());
                             }));
                         }
                         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                            if ui.add(Button::primary("Close")).clicked() {
+                            if ui.add(Button::primary(crate::l10n::tr("Close"))).clicked() {
                                 close = true;
                             }
                         });
@@ -341,13 +342,30 @@ impl LaApp {
         let s = &mut self.settings;
         match section {
             Section::Appearance => {
-                row(ui, "Theme", SEGMENTED_H, |ui| {
+                row(ui, crate::l10n::tr("Language"), FIELD_H, |ui| {
+                    use crate::l10n::Language;
+                    let names: Vec<&str> = Language::ALL.iter().map(|l| l.name()).collect();
+                    let before = Language::ALL.iter().position(|l| *l == s.language).unwrap_or(0);
+                    let mut i = before;
+                    ui.allocate_ui(vec2(200.0, FIELD_H), |ui| {
+                        ui.add(Dropdown::new(crate::l10n::tr("Language"), &mut i, &names))
+                    });
+                    if i != before {
+                        s.language = Language::ALL[i];
+                        let lang = s.language;
+                        after.push(Box::new(move |app: &mut LaApp| {
+                            crate::l10n::set(lang);
+                            app.ui.ctx.request_repaint();
+                        }));
+                    }
+                });
+                row(ui, crate::l10n::tr("Theme"), SEGMENTED_H, |ui| {
                     let i = ThemePref::ALL.iter().position(|t| *t == s.appearance.theme).unwrap_or(2);
-                    if let Some(k) = choice(ui, "set-theme", &["Light", "Dark", "System"], i) {
+                    if let Some(k) = choice(ui, "set-theme", &ThemePref::ALL.map(ThemePref::label), i) {
                         s.appearance.theme = ThemePref::ALL[k];
                     }
                 });
-                row(ui, "UI scale", FIELD_H, |ui| {
+                row(ui, crate::l10n::tr("UI scale"), FIELD_H, |ui| {
                     let v = s.appearance.ui_scale;
                     let text = format!("{v:.1}");
                     let step = ui
@@ -359,11 +377,11 @@ impl LaApp {
                         after.push(Box::new(move |app: &mut LaApp| app.step_ui_scale(Some(step))));
                     }
                     ui.add_space(12.0);
-                    if (v - 1.0).abs() > 1e-3 && ui.add(Button::tertiary("Reset")).clicked() {
+                    if (v - 1.0).abs() > 1e-3 && ui.add(Button::tertiary(crate::l10n::tr("Reset"))).clicked() {
                         after.push(Box::new(|app: &mut LaApp| app.step_ui_scale(None)));
                     }
                 });
-                check(ui, &mut s.appearance.show_tooltips, "Show tooltips", None);
+                check(ui, &mut s.appearance.show_tooltips, crate::l10n::tr("Show tooltips"), None);
             }
             Section::Waveform => {
                 check(
@@ -491,7 +509,7 @@ impl LaApp {
                 });
                 row(ui, "Recent commands", FIELD_H, |ui| {
                     let any = !s.history.recent_commands.is_empty();
-                    if ui.add_enabled(any, Button::secondary("Reset")).clicked() {
+                    if ui.add_enabled(any, Button::secondary(crate::l10n::tr("Reset"))).clicked() {
                         s.history.recent_commands.clear();
                     }
                 });

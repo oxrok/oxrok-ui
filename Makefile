@@ -17,7 +17,7 @@ BENCH ?= $(if $(strip $(SIGROK_PREFIX)),$(dir $(abspath $(SIGROK_PREFIX))))
 SIGGEN_FW ?= $(if $(strip $(BENCH)),$(abspath $(BENCH))/esp32/siggen)
 PIO ?= pio
 
-.PHONY: help notices firmware-deps perf bundle run run-mock test test-oxrok test-hil siggen siggen-loop siggen-flash oxrok-scan oxrok-info check screenshots icons clean
+.PHONY: help cjk-font notices firmware-deps perf bundle run run-mock test test-oxrok test-hil siggen siggen-loop siggen-flash oxrok-scan oxrok-info check screenshots icons clean
 
 help:
 	@echo
@@ -37,6 +37,7 @@ help:
 	@echo "  make bundle        macOS: ad-hoc signed .app and .dmg in dist/ (packaging/)"
 	@echo "  make screenshots   regenerate docs/screenshots"
 	@echo "  make notices       regenerate the About dialog's third-party notices"
+	@echo "  make cjk-font      rebuild the Chinese font subsets from src/l10n.rs"
 	@echo "  make firmware-deps fetch sigrok-util's firmware scripts and the fx2lafw firmware into vendor/"
 	@echo "  make icons         render the app icon (PNG, macOS .icns) from its SVG (needs rsvg-convert)"
 
@@ -131,6 +132,14 @@ bundle:
 perf:
 	$(CARGO) test --release --lib -- --ignored perf
 	$(CARGO) test --release --test perf -- --ignored --test-threads=1 --nocapture
+
+# The Chinese font subsets, from the translation catalog's characters
+# (after adding Chinese strings). Downloads Noto Sans SC (OFL) once.
+NOTO_SC_URL ?= https://github.com/google/fonts/raw/main/ofl/notosanssc/NotoSansSC%5Bwght%5D.ttf
+cjk-font:
+	mkdir -p vendor
+	[ -f vendor/NotoSansSC-VF.ttf ] || curl -fsSL -o vendor/NotoSansSC-VF.ttf "$(NOTO_SC_URL)"
+	uv run --quiet --with fonttools python3 scripts/cjk_font.py vendor/NotoSansSC-VF.ttf
 
 # The About dialog's third-party notices.
 notices:

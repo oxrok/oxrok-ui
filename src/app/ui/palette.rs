@@ -224,7 +224,7 @@ impl LaApp {
                     // Breadcrumb.
                     if let Some(parent) = p.parent.and_then(commands::get) {
                         let (rect, resp) = ui.allocate_exact_size(vec2(WIDTH, HEADER_H), Sense::click());
-                        let text = format!("‹ {}", parent.label);
+                        let text = format!("‹ {}", crate::l10n::tr(parent.label));
                         resp.widget_info(|| WidgetInfo::labeled(Role::Button, true, &text));
                         let c = if resp.hovered() { Token::Ink1 } else { Token::Ink3 };
                         ui.painter().text(

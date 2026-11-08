@@ -17,12 +17,13 @@ impl BusFormat {
     pub const ALL: [BusFormat; 4] = [BusFormat::Hex, BusFormat::Decimal, BusFormat::Binary, BusFormat::None];
 
     pub fn label(self) -> &'static str {
-        match self {
+        let en = match self {
             BusFormat::Hex => "Hex",
             BusFormat::Decimal => "Decimal",
             BusFormat::Binary => "Binary",
             BusFormat::None => "No Data",
-        }
+        };
+        crate::l10n::tr(en)
     }
 
     /// The group has a value to show.
@@ -44,10 +45,11 @@ impl Endianness {
     pub const ALL: [Endianness; 2] = [Endianness::MsbFirst, Endianness::LsbFirst];
 
     pub fn label(self) -> &'static str {
-        match self {
+        let en = match self {
             Endianness::MsbFirst => "Wire MSB → Data MSB",
             Endianness::LsbFirst => "Wire LSB → Data LSB",
-        }
+        };
+        crate::l10n::tr(en)
     }
 }
 

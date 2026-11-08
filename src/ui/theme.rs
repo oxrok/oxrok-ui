@@ -89,10 +89,11 @@ impl ThemeKind {
     pub const ALL: [ThemeKind; 2] = [ThemeKind::Light, ThemeKind::Dark];
 
     pub fn label(self) -> &'static str {
-        match self {
+        let en = match self {
             ThemeKind::Dark => "Dark",
             ThemeKind::Light => "Light",
-        }
+        };
+        crate::l10n::tr(en)
     }
 
     pub fn toggled(self) -> Self {

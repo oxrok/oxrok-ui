@@ -118,6 +118,7 @@ impl LaApp {
             }
             ConfirmAction::ResetAllSettings => {
                 self.settings.reset_all();
+                crate::l10n::set(self.settings.language);
                 self.ui.auto_layout_for = None;
                 self.mark_settings_dirty();
             }

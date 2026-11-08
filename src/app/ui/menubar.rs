@@ -60,24 +60,24 @@ pub(crate) const CLEAR_RECENT: &str = "clear_recent";
 pub(crate) const QUIT: &str = "quit";
 const DEVICE: &str = "device:";
 
-fn cmd(id: &'static str, label: &str) -> Node {
-    Node::Cmd { id, label: label.to_owned() }
+fn cmd(id: &'static str, label: &'static str) -> Node {
+    Node::Cmd { id, label: crate::l10n::tr(label).to_owned() }
 }
 
 impl LaApp {
     /// The menus in order, titles and entries. `native` leaves out
     /// what the macOS app menu holds instead.
-    pub(crate) fn menu_model(&self, native: bool) -> Vec<(&'static str, Vec<Node>)> {
+    pub(crate) fn menu_model(&self, native: bool) -> Vec<(&'static str, &'static str, Vec<Node>)> {
         let label = |id: &'static str| {
             commands::get(id).map(|c| match id {
                 // The label reflects the state (Capture menu).
                 "capture.toggle" => self.command_label(c),
-                _ => c.label.to_owned(),
+                _ => crate::l10n::tr(c.label).to_owned(),
             })
         };
         let c = |id: &'static str| Node::Cmd { id, label: label(id).unwrap_or_default() };
-        let children = |id: &'static str, title: &str, current: Option<&str>| Node::Sub {
-            label: title.to_owned(),
+        let children = |id: &'static str, title: &'static str, current: Option<&str>| Node::Sub {
+            label: crate::l10n::tr(title).to_owned(),
             items: self
                 .command_children(id)
                 .into_iter()
@@ -97,7 +97,7 @@ impl LaApp {
             recent.push(Node::Sep);
             recent.push(Node::Special {
                 id: CLEAR_RECENT.into(),
-                label: "Clear Recent".into(),
+                label: crate::l10n::tr("Clear Recent").into(),
                 shortcut: None,
                 enabled: true,
                 tip: None,
@@ -106,7 +106,7 @@ impl LaApp {
         let mut file = vec![
             c("session.new"),
             c("file.open"),
-            Node::Sub { label: "Open Recent".into(), items: recent },
+            Node::Sub { label: crate::l10n::tr("Open Recent").into(), items: recent },
             Node::Sep,
             c("file.save"),
             c("file.save_as"),
@@ -121,7 +121,7 @@ impl LaApp {
             file.push(cmd("settings.open", "Settings…"));
             file.push(Node::Special {
                 id: QUIT.into(),
-                label: "Quit".into(),
+                label: crate::l10n::tr("Quit").into(),
                 shortcut: Some(if MAC { "⌘Q" } else { "Ctrl+Q" }.into()),
                 enabled: true,
                 tip: None,
@@ -136,7 +136,7 @@ impl LaApp {
             c("session.rename"),
             Node::Sep,
             Node::Sub {
-                label: "Delete Data".into(),
+                label: crate::l10n::tr("Delete Data").into(),
                 items: vec![
                     cmd("data.delete_off_screen", "Off Screen"),
                     cmd("data.delete_before_view", "Before the View"),
@@ -156,7 +156,7 @@ impl LaApp {
             c("history.forward"),
             Node::Sep,
             Node::Sub {
-                label: "Inspector".into(),
+                label: crate::l10n::tr("Inspector").into(),
                 items: vec![
                     cmd("inspector.toggle", "Show/Hide Inspector"),
                     Node::Sep,
@@ -220,7 +220,14 @@ impl LaApp {
             Node::Sep,
             c("help.about"),
         ];
-        vec![("File", file), ("Edit", edit), ("View", view), ("Capture", capture), ("Analyze", analyze), ("Help", help)]
+        vec![
+            ("file", crate::l10n::tr("File"), file),
+            ("edit", crate::l10n::tr("Edit"), edit),
+            ("view", crate::l10n::tr("View"), view),
+            ("capture", crate::l10n::tr("Capture"), capture),
+            ("analyze", crate::l10n::tr("Analyze"), analyze),
+            ("help", crate::l10n::tr("Help"), help),
+        ]
     }
 
     /// Runs a menu click (either menu bar).
@@ -265,7 +272,7 @@ impl LaApp {
                 ui.spacing_mut().button_padding = egui::vec2(10.0, 2.0);
                 egui::MenuBar::new().ui(ui, |ui| {
                     ui.add_space(4.0);
-                    for (title, nodes) in &model {
+                    for (_id, title, nodes) in &model {
                         let text = egui::RichText::new(*title).text_style(Text::Prose.style());
                         egui::containers::menu::MenuButton::new(text).ui(ui, |ui| {
                             ui.set_width(MENU_W);

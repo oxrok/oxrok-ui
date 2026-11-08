@@ -125,29 +125,32 @@ impl LaApp {
 
     /// The label with the command's state, e.g. "Theme: Dark".
     pub(crate) fn command_label(&self, c: &Command) -> String {
+        let tr = crate::l10n::tr;
+        let one = |template: &'static str, v: &str| tr(template).replacen("{}", v, 1);
         match c.id {
             "capture.toggle" => {
                 let busy = self.session.as_ref().is_some_and(|s| s.state.is_busy());
-                (if busy { "Stop Recording" } else { "Start Recording" }).to_owned()
+                tr(if busy { "Stop Recording" } else { "Start Recording" }).to_owned()
             }
-            "view.theme" => format!("Theme: {}", self.settings.appearance.theme.label()),
-            "view.trace_width" => format!("Trace Width: {}", self.settings.waveform.trace_width.label()),
+            "view.theme" => one("Theme: {}", self.settings.appearance.theme.label()),
+            "view.trace_width" => one("Trace Width: {}", self.settings.waveform.trace_width.label()),
             "analyzer.pause" => {
-                format!("Pause Analyzers: {}", if self.ui.analyzers_paused { "on" } else { "off" })
+                let on = if self.ui.analyzers_paused { tr("on") } else { tr("off") };
+                one("Pause Analyzers: {}", on)
             }
             "capture.repeat" => {
-                format!("Repeat Capture: {}", if self.command_checked(c.id) == Some(true) { "on" } else { "off" })
+                let on = if self.command_checked(c.id) == Some(true) { tr("on") } else { tr("off") };
+                one("Repeat Capture: {}", on)
             }
             "view.wire_status" => {
-                format!("Wire Status: {}", if self.command_checked(c.id) == Some(true) { "on" } else { "off" })
+                let on = if self.command_checked(c.id) == Some(true) { tr("on") } else { tr("off") };
+                one("Wire Status: {}", on)
             }
             "view.traces_color" => {
-                format!(
-                    "Toggle Traces Color: {}",
-                    if !self.settings.waveform.color_waveforms { "neutral" } else { "by channel" }
-                )
+                let state = if !self.settings.waveform.color_waveforms { tr("neutral") } else { tr("by channel") };
+                one("Toggle Traces Color: {}", state)
             }
-            _ => c.label.to_owned(),
+            _ => tr(c.label).to_owned(),
         }
     }
 

@@ -102,11 +102,12 @@ impl TraceWidth {
     pub const ALL: [TraceWidth; 3] = [TraceWidth::Thin, TraceWidth::Normal, TraceWidth::Bold];
 
     pub fn label(self) -> &'static str {
-        match self {
+        let en = match self {
             TraceWidth::Thin => "Thin",
             TraceWidth::Normal => "Normal",
             TraceWidth::Bold => "Bold",
-        }
+        };
+        crate::l10n::tr(en)
     }
 
     /// The width in points, a whole number of physical pixels.

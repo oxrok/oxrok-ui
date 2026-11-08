@@ -88,7 +88,7 @@ pub(crate) fn parse_id(id: &str) -> Option<Act> {
 
 impl LaApp {
     /// What the native menu shows now; it's rebuilt when this changes.
-    fn menu_signature(&self, model: &[(&'static str, Vec<Node>)]) -> String {
+    fn menu_signature(&self, model: &[(&'static str, &'static str, Vec<Node>)]) -> String {
         fn walk(app: &LaApp, nodes: &[Node], out: &mut String) {
             for n in nodes {
                 out.push_str(&format!("{n:?}"));
@@ -105,7 +105,7 @@ impl LaApp {
             }
         }
         let mut s = String::new();
-        for (title, nodes) in model {
+        for (_id, title, nodes) in model {
             s.push_str(title);
             walk(self, nodes, &mut s);
         }
@@ -201,8 +201,8 @@ impl LaApp {
             true,
             &[&PredefinedMenuItem::minimize(None), &PredefinedMenuItem::maximize(Some("Zoom"))],
         );
-        for (title, nodes) in &model {
-            if *title == "Help"
+        for (id, title, nodes) in &model {
+            if *id == "help"
                 && let Ok(w) = &window
             {
                 let _ = menu.append(w);
@@ -211,7 +211,7 @@ impl LaApp {
             let sub = Submenu::new(*title, true);
             self.append_nodes(&sub, nodes);
             let _ = menu.append(&sub);
-            if *title == "Help" {
+            if *id == "help" {
                 sub.set_as_help_menu_for_nsapp();
             }
         }

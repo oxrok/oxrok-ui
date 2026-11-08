@@ -165,7 +165,10 @@ pub fn missing_tools(needs: &[&str]) -> Vec<String> {
     let path = std::env::var_os("PATH").unwrap_or_default();
     needs
         .iter()
-        .filter(|t| !std::env::split_paths(&path).any(|d| d.join(t).is_file()))
+        .filter(|t| {
+            let exe = format!("{t}{}", std::env::consts::EXE_SUFFIX);
+            !std::env::split_paths(&path).any(|d| d.join(t).is_file() || d.join(&exe).is_file())
+        })
         .map(|t| (*t).to_owned())
         .collect()
 }

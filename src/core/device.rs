@@ -26,7 +26,7 @@ impl OptionScope {
     /// The segment label: "Device" or the group's name.
     pub fn label(&self) -> &str {
         match self {
-            OptionScope::Device => "Device",
+            OptionScope::Device => crate::l10n::tr("Device"),
             OptionScope::Group(g) => g,
         }
     }

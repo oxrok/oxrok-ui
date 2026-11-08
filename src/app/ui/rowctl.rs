@@ -10,6 +10,7 @@ use crate::core::animator::{JUMP_DURATION, ViewRequest};
 use crate::core::bus::{BusFormat, Endianness};
 use crate::core::layout::{FitRow, fit_rows};
 use crate::core::{ChannelId, ChannelKind, ViewState};
+use crate::l10n::tr;
 use crate::ui::Token;
 use crate::ui::colors::channel_color;
 use crate::ui::theme::ThemeExt;
@@ -75,7 +76,7 @@ impl LaApp {
             pos2(x + SPLITTER_W / 2.0, l.rows.bottom()),
         );
         let resp = ui.interact(r, ui.make_persistent_id("label_splitter"), Sense::drag());
-        resp.widget_info(|| WidgetInfo::labeled(Role::Splitter, true, "Resize label column"));
+        resp.widget_info(|| WidgetInfo::labeled(Role::Splitter, true, tr("Resize label column")));
         if resp.hovered() || resp.dragged() {
             ui.ctx().set_cursor_icon(egui::CursorIcon::ResizeHorizontal);
         }
@@ -235,7 +236,7 @@ impl LaApp {
             let in_plot = l.plot_rows.contains(self.ui.row_menu_pos) && !id.is_bus();
             let t = v.px_to_time(at as f64);
             let origin = s.origin.resolve(&s.markers, s.trigger);
-            let point = format!("this point ({})", crate::core::format::time_full(t - origin));
+            let point = tr("this point ({})").replacen("{}", &crate::core::format::time_full(t - origin), 1);
             if in_plot { super::trim::point_items(t, &point, Some((v.left_time, v.right_time()))) } else { Vec::new() }
         };
         let mut act = None;
@@ -255,58 +256,58 @@ impl LaApp {
             .width(260.0);
         popup.show(|ui| {
             if analog {
-                submenu(ui, "Zoom and Resize", 300.0, None, |ui| {
-                    if menu_item(ui, "Match the Y-zoom across all analog channels", None).clicked() {
+                submenu(ui, tr("Zoom and Resize"), 300.0, None, |ui| {
+                    if menu_item(ui, tr("Match the Y-zoom across all analog channels"), None).clicked() {
                         set(&mut act, Action::MatchYZoom(id));
                     }
                     ui.add_enabled_ui(has_data, |ui| {
-                        if menu_item(ui, "Y Fit", Some("Y")).clicked() {
+                        if menu_item(ui, tr("Y Fit"), Some("Y")).clicked() {
                             set(&mut act, Action::YFit(id));
                         }
-                        if menu_item(ui, "XY Fit", None).clicked() {
+                        if menu_item(ui, tr("XY Fit"), None).clicked() {
                             set(&mut act, Action::XyFit(id));
                         }
-                        if menu_item(ui, "Y Fit All Channels", Some("Shift+Y")).clicked() {
+                        if menu_item(ui, tr("Y Fit All Channels"), Some("Shift+Y")).clicked() {
                             set(&mut act, Action::YFitAll);
                         }
                     });
                     menu_separator(ui);
-                    if menu_item(ui, "Resize All Analog Channels to Match", None).clicked() {
+                    if menu_item(ui, tr("Resize All Analog Channels to Match"), None).clicked() {
                         set(&mut act, Action::MatchHeight(id));
                     }
-                    if menu_item(ui, "Reset Channel Height", None).clicked() {
+                    if menu_item(ui, tr("Reset Channel Height"), None).clicked() {
                         set(&mut act, Action::ResetHeight(id));
                     }
-                    if menu_item(ui, "Fit all Rows to Window Height", None).clicked() {
+                    if menu_item(ui, tr("Fit all Rows to Window Height"), None).clicked() {
                         set(&mut act, Action::FitAll);
                     }
-                    if menu_check_item(ui, "Auto Layout", auto, None).clicked() {
+                    if menu_check_item(ui, tr("Auto Layout"), auto, None).clicked() {
                         set(&mut act, Action::ToggleAutoLayout);
                     }
                 });
             } else {
-                submenu(ui, "Resize", 300.0, None, |ui| {
-                    if menu_item(ui, "Resize All Digital Channels to Match", None).clicked() {
+                submenu(ui, tr("Resize"), 300.0, None, |ui| {
+                    if menu_item(ui, tr("Resize All Digital Channels to Match"), None).clicked() {
                         set(&mut act, Action::MatchHeight(id));
                     }
-                    if menu_item(ui, "Fit all Rows to Window Height", None).clicked() {
+                    if menu_item(ui, tr("Fit all Rows to Window Height"), None).clicked() {
                         set(&mut act, Action::FitAll);
                     }
-                    if menu_check_item(ui, "Auto Layout", auto, None).clicked() {
+                    if menu_check_item(ui, tr("Auto Layout"), auto, None).clicked() {
                         set(&mut act, Action::ToggleAutoLayout);
                     }
                 });
-                if !id.is_bus() && !member && menu_item(ui, "Group Channels…", None).clicked() {
+                if !id.is_bus() && !member && menu_item(ui, tr("Group Channels…"), None).clicked() {
                     set(&mut act, Action::GroupChannels(id));
                 }
             }
             // #3: group rows.
             if let Some(b) = &bus {
                 menu_separator(ui);
-                if menu_item(ui, "Edit Group…", None).clicked() {
+                if menu_item(ui, tr("Edit Group…"), None).clicked() {
                     set(&mut act, Action::EditGroup(b.id));
                 }
-                submenu(ui, "Value Format", 220.0, None, |ui| {
+                submenu(ui, tr("Value Format"), 220.0, None, |ui| {
                     for f in BusFormat::ALL {
                         if menu_check_item(ui, f.label(), b.format == f, None).clicked() {
                             set(&mut act, Action::BusFormat(b.id, f));
@@ -321,12 +322,12 @@ impl LaApp {
                             }
                         }
                         menu_separator(ui);
-                        if menu_check_item(ui, "Signed", b.signed, None).clicked() {
+                        if menu_check_item(ui, tr("Signed"), b.signed, None).clicked() {
                             set(&mut act, Action::BusSigned(b.id));
                         }
                     });
                 });
-                if menu_item(ui, "Remove Group", None).clicked() {
+                if menu_item(ui, tr("Remove Group"), None).clicked() {
                     set(&mut act, Action::RemoveGroup(b.id));
                 }
             }
@@ -336,14 +337,14 @@ impl LaApp {
             {
                 set(&mut act, Action::Trim(trim_items[k].clone()));
             }
-            if menu_item(ui, if bus.is_some() { "Hide Group" } else { "Hide Channel" }, None).clicked() {
+            if menu_item(ui, if bus.is_some() { tr("Hide Group") } else { tr("Hide Channel") }, None).clicked() {
                 set(&mut act, Action::Hide(id));
             }
             // Toggling keeps the submenu open.
             let keep_open = MenuConfig::new().close_behavior(PopupCloseBehavior::CloseOnClickOutside);
-            submenu(ui, "Show/Hide Channels", 220.0, Some(keep_open), |ui| {
+            submenu(ui, tr("Show/Hide Channels"), 220.0, Some(keep_open), |ui| {
                 ui.add_enabled_ui(any_hidden, |ui| {
-                    if menu_item(ui, "Show All Channels", None).clicked() {
+                    if menu_item(ui, tr("Show All Channels"), None).clicked() {
                         set(&mut act, Action::ShowAll);
                     }
                 });
@@ -354,14 +355,14 @@ impl LaApp {
                     }
                 }
             });
-            submenu(ui, "Appearance", 220.0, None, |ui| {
+            submenu(ui, tr("Appearance"), 220.0, None, |ui| {
                 // The row's own color, and the neutral traces toggle.
-                submenu(ui, "Channel Color", 180.0, None, |ui| {
-                    if menu_check_item(ui, "Default", own_color.is_none(), None).clicked() {
+                submenu(ui, tr("Channel Color"), 180.0, None, |ui| {
+                    if menu_check_item(ui, tr("Default"), own_color.is_none(), None).clicked() {
                         set(&mut act, Action::Color(id, None));
                     }
                     for (name, rgb) in COLOR_NAMES.iter().zip(&palette) {
-                        let r = menu_check_item(ui, name, own_color == Some(*rgb), None);
+                        let r = menu_check_item(ui, tr(name), own_color == Some(*rgb), None);
                         let sw =
                             Rect::from_center_size(pos2(r.rect.right() - 20.0, r.rect.center().y), vec2(12.0, 12.0));
                         ui.painter().rect_filled(sw, 2.0, egui::Color32::from_rgb(rgb[0], rgb[1], rgb[2]));
@@ -370,10 +371,10 @@ impl LaApp {
                         }
                     }
                 });
-                if menu_check_item(ui, "Toggle Traces Color", neutral, None).clicked() {
+                if menu_check_item(ui, tr("Toggle Traces Color"), neutral, None).clicked() {
                     set(&mut act, Action::ToggleNeutral);
                 }
-                submenu(ui, "Trace Width", 160.0, None, |ui| {
+                submenu(ui, tr("Trace Width"), 160.0, None, |ui| {
                     for w in crate::ui::waveform::TraceWidth::ALL {
                         if menu_check_item(ui, w.label(), trace_width == w, None).clicked() {
                             set(&mut act, Action::TraceWidth(w));
@@ -383,7 +384,8 @@ impl LaApp {
             });
             // #9: digital and group rows.
             if !analog {
-                let r = ui.add_enabled_ui(wire.1.is_ok(), |ui| menu_check_item(ui, "Wire Status", wire.0, None)).inner;
+                let r =
+                    ui.add_enabled_ui(wire.1.is_ok(), |ui| menu_check_item(ui, tr("Wire Status"), wire.0, None)).inner;
                 let r = match wire.1 {
                     Err(why) => r.on_disabled_hover_text(why),
                     Ok(()) => r,
@@ -393,10 +395,10 @@ impl LaApp {
                 }
             }
             menu_separator(ui);
-            if menu_item(ui, "Reset Channel Names", None).clicked() {
+            if menu_item(ui, tr("Reset Channel Names"), None).clicked() {
                 set(&mut act, Action::ResetNames);
             }
-            if menu_item(ui, "Settings…", None).clicked() {
+            if menu_item(ui, tr("Settings…"), None).clicked() {
                 set(&mut act, Action::Settings);
             }
         });

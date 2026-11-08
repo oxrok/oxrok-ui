@@ -6,6 +6,7 @@ use crate::core::{CaptureTime, ChannelId, ViewState};
 use crate::decode::format::{BubbleGroup, count_badge, fit_text, merge_bubbles, multi_text};
 use crate::decode::runner::Output;
 use crate::decode::{Radix, RadixSupport, all_rows};
+use crate::l10n::tr;
 use crate::ui::Token;
 use crate::ui::theme::Theme;
 use crate::ui::typography::Text;
@@ -46,7 +47,7 @@ pub(crate) struct Lane {
 pub(crate) fn radix_item(ui: &mut Ui, support: Option<RadixSupport>, r: Radix, checked: bool) -> egui::Response {
     let ok = r == Radix::Native || support != Some(RadixSupport::NativeOnly);
     let resp = ui.add_enabled_ui(ok, |ui| menu_check_item(ui, r.label(), checked, None)).inner;
-    resp.on_disabled_hover_text("This decoder formats its own values")
+    resp.on_disabled_hover_text(tr("This decoder formats its own values"))
 }
 
 /// A bubble action, applied after painting.
@@ -157,7 +158,7 @@ impl LaApp {
                 clip.text(
                     band.center(),
                     Align2::CENTER_CENTER,
-                    "many results",
+                    tr("many results"),
                     font.clone(),
                     theme.color(Token::InkOnSwatch),
                 );
@@ -173,7 +174,11 @@ impl LaApp {
                 let Some((_, f)) = target else { continue };
                 let c = pos2(if next { cell.right() - 10.0 } else { cell.left() + 10.0 }, y + BUBBLE_H / 2.0);
                 let r = Rect::from_center_size(c, vec2(16.0, 16.0));
-                let label = format!("{} {} result", lane.name, if next { "next" } else { "previous" });
+                let label = tr("{} {} result").replacen("{}", &lane.name, 1).replacen(
+                    "{}",
+                    if next { tr("next") } else { tr("previous") },
+                    1,
+                );
                 let resp =
                     ui.interact(r, ui.make_persistent_id(("lane_nav", lane.analyzer, lane.row, next)), Sense::click());
                 resp.widget_info(|| WidgetInfo::labeled(Role::Button, true, &label));
@@ -186,7 +191,7 @@ impl LaApp {
                     let pts = vec![c + vec2(-2.1, -3.5), c + vec2(-2.1, 3.5), c + vec2(2.1, 0.0)];
                     clip.add(egui::Shape::convex_polygon(pts, theme.color(Token::Ink2), Stroke::NONE));
                 }
-                if resp.on_hover_text(if next { "Next result" } else { "Previous result" }).clicked() {
+                if resp.on_hover_text(if next { tr("Next result") } else { tr("Previous result") }).clicked() {
                     let mid = f.start + (f.end - f.start) / 2;
                     acts.push(BubbleAct::Center(CaptureTime::from_sample(mid, rate)));
                 }
@@ -269,7 +274,10 @@ impl LaApp {
                 joined.clone()
             };
             let first80: String = joined.chars().take(80).collect();
-            ((n > 1).then_some(shown), format!("[{} results] {first80}", g.count()))
+            (
+                (n > 1).then_some(shown),
+                tr("[{} results] {}").replacen("{}", &g.count().to_string(), 1).replacen("{}", &first80, 1),
+            )
         };
         if let Some(t) = &text {
             let center = if g.count() > 1 { pos2(rect.center().x + 8.0, rect.center().y) } else { rect.center() };
@@ -280,7 +288,9 @@ impl LaApp {
         let cmd = super::cmd_key();
         let resp = resp.on_hover_ui(|ui| {
             ui.label(&tip);
-            ui.label(egui::RichText::new(format!("{cmd}+click to jump to that row in the table")).weak());
+            ui.label(
+                egui::RichText::new(tr("{}+click to jump to that row in the table").replacen("{}", cmd, 1)).weak(),
+            );
         });
         let (first, last) = (group[0], group[group.len() - 1]);
         if resp.double_clicked() {
@@ -295,7 +305,7 @@ impl LaApp {
                     acts.push(BubbleAct::Radix(lane.analyzer, r));
                 }
             }
-            if menu_item(ui, "Copy", None).clicked() {
+            if menu_item(ui, tr("Copy"), None).clicked() {
                 acts.push(BubbleAct::Copy(text.clone().unwrap_or(tip.clone())));
             }
         });
@@ -317,7 +327,7 @@ impl LaApp {
                 }
                 BubbleAct::Copy(t) => {
                     ui.ctx().copy_text(t);
-                    self.toast(crate::ui::toast::Toast::new(crate::ui::toast::ToastKind::Success, "Copied"));
+                    self.toast(crate::ui::toast::Toast::new(crate::ui::toast::ToastKind::Success, tr("Copied")));
                 }
                 BubbleAct::Table(analyzer, frame) => self.reveal_in_table(analyzer, frame),
             }

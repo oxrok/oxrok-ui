@@ -13,6 +13,7 @@ use crate::engine::export::{
     AnalogCsvColumn, CsvColumn, Estimate, ExportFormatKind, SampleRange, TimeColumn, estimate, write_analog_bin,
     write_analog_csv, write_digital_bin, write_digital_csv, write_vcd,
 };
+use crate::l10n::tr;
 use crate::ui::Token;
 use crate::ui::theme::ThemeExt;
 use crate::ui::toast::{Toast, ToastKind};
@@ -84,7 +85,7 @@ impl ExportDialog {
 fn format_label(f: ExportFormat) -> &'static str {
     match f {
         ExportFormat::Csv => "CSV",
-        ExportFormat::Binary => "Binary",
+        ExportFormat::Binary => tr("Binary"),
         ExportFormat::Vcd => "VCD",
         ExportFormat::Sigrok => "sigrok .sr",
     }
@@ -93,13 +94,13 @@ fn format_label(f: ExportFormat) -> &'static str {
 fn format_description(f: ExportFormat) -> &'static str {
     match f {
         ExportFormat::Csv => {
-            "CSV opens in other tools (e.g. spreadsheets) but can't be reloaded here — use File → Save for that."
+            tr("CSV opens in other tools (e.g. spreadsheets) but can't be reloaded here — use File → Save for that.")
         }
-        ExportFormat::Binary => {
-            "One file per channel with a small header: transition times for digital channels, samples for analog ones."
-        }
-        ExportFormat::Vcd => "Value Change Dump (IEEE 1364), readable by most waveform viewers and HDL simulators.",
-        ExportFormat::Sigrok => "A sigrok session file (.sr), readable by PulseView and oxrok.",
+        ExportFormat::Binary => tr(
+            "One file per channel with a small header: transition times for digital channels, samples for analog ones.",
+        ),
+        ExportFormat::Vcd => tr("Value Change Dump (IEEE 1364), readable by most waveform viewers and HDL simulators."),
+        ExportFormat::Sigrok => tr("A sigrok session file (.sr), readable by PulseView and oxrok."),
     }
 }
 
@@ -109,10 +110,10 @@ const RANGES: [ExportRange; 4] =
 
 fn range_label(r: ExportRange) -> &'static str {
     match r {
-        ExportRange::All => "All Time",
-        ExportRange::Visible => "Visible Screen",
-        ExportRange::Markers => "Between Timing Markers",
-        ExportRange::Measurement => "Range Measurement",
+        ExportRange::All => tr("All Time"),
+        ExportRange::Visible => tr("Visible Screen"),
+        ExportRange::Markers => tr("Between Timing Markers"),
+        ExportRange::Measurement => tr("Range Measurement"),
     }
 }
 
@@ -150,7 +151,7 @@ impl LaApp {
     fn open_export(&mut self, range_id: Option<u32>) {
         let Some(s) = self.session.as_ref() else { return };
         if s.state != CaptureState::Finished || !s.has_data() {
-            self.toast(Toast::new(ToastKind::Info, "Record a capture before exporting.").id("export-nothing"));
+            self.toast(Toast::new(ToastKind::Info, tr("Record a capture before exporting.")).id("export-nothing"));
             return;
         }
         // The visible rows' channels, among those with data (FIL-).
@@ -280,11 +281,12 @@ impl LaApp {
             let origin = s.origin.resolve(&s.markers, s.trigger);
             let (ta, tz) = (CaptureTime::from_sample(a, rate) - origin, CaptureTime::from_sample(z, rate) - origin);
             let dur = crate::core::format::si_sig((tz - ta).as_secs_f64(), "s", 4);
-            Some(format!(
-                "{dur}, from {} to {}",
-                crate::core::format::time_full(ta),
-                crate::core::format::time_full(tz)
-            ))
+            Some(
+                tr("{}, from {} to {}")
+                    .replacen("{}", &dur, 1)
+                    .replacen("{}", &crate::core::format::time_full(ta), 1)
+                    .replacen("{}", &crate::core::format::time_full(tz), 1),
+            )
         });
         let est = span.and_then(|r| self.export_estimate(d, r));
         let has_a = d.has(ChannelKind::Analog);
@@ -313,7 +315,9 @@ impl LaApp {
             ui.set_width(540.0);
             let c = |t| theme.color(t);
             let muted = |t: &str| egui::RichText::new(t).color(c(Token::Ink3));
-            ui.label(egui::RichText::new("Export Raw Data").text_style(Text::Display.style()).color(c(Token::Ink1)));
+            ui.label(
+                egui::RichText::new(tr("Export Raw Data")).text_style(Text::Display.style()).color(c(Token::Ink1)),
+            );
             ui.add_space(20.0);
             // The body scrolls when the dialog would pass 90 % of
             // the window; the footer stays visible.
@@ -326,55 +330,55 @@ impl LaApp {
                     .inner_margin(12)
                     .show(ui, |ui| {
                         egui::Grid::new("export_options").num_columns(2).spacing([24.0, 12.0]).show(ui, |ui| {
-                            ui.label(muted("Time Range")).on_hover_text("Which part of the capture to export");
+                            ui.label(muted(tr("Time Range"))).on_hover_text(tr("Which part of the capture to export"));
                             ui.vertical(|ui| {
                                 ui.set_width(300.0);
-                                ui.add(Dropdown::new("Time Range", &mut range_idx, &range_labels));
+                                ui.add(Dropdown::new(tr("Time Range"), &mut range_idx, &range_labels));
                             });
                             ui.end_row();
                             match offered.get(range_idx) {
                                 Some(ExportRange::Markers) => {
-                                    ui.label(muted("Export Start"));
+                                    ui.label(muted(tr("Export Start")));
                                     ui.vertical(|ui| {
                                         ui.set_width(300.0);
-                                        ui.add(Dropdown::new("Export Start", &mut start, &position_labels));
+                                        ui.add(Dropdown::new(tr("Export Start"), &mut start, &position_labels));
                                     });
                                     ui.end_row();
-                                    ui.label(muted("Export End"));
+                                    ui.label(muted(tr("Export End")));
                                     ui.vertical(|ui| {
                                         ui.set_width(300.0);
-                                        ui.add(Dropdown::new("Export End", &mut end, &position_labels));
+                                        ui.add(Dropdown::new(tr("Export End"), &mut end, &position_labels));
                                     });
                                     ui.end_row();
                                 }
                                 Some(ExportRange::Measurement) => {
-                                    ui.label(muted("Range"));
+                                    ui.label(muted(tr("Range")));
                                     ui.vertical(|ui| {
                                         ui.set_width(300.0);
-                                        ui.add(Dropdown::new("Range", &mut measurement, &ranges));
+                                        ui.add(Dropdown::new(tr("Range"), &mut measurement, &ranges));
                                     });
                                     ui.end_row();
                                 }
                                 _ => {}
                             }
                             ui.label("");
-                            ui.label(muted(span_text.as_deref().unwrap_or("The range holds no samples.")));
+                            ui.label(muted(span_text.as_deref().unwrap_or(tr("The range holds no samples."))));
                             ui.end_row();
                             if has_a {
-                                ui.label(muted("Analog Downsample Ratio"))
-                                    .on_hover_text("Keep every Nth analog sample");
+                                ui.label(muted(tr("Analog Downsample Ratio")))
+                                    .on_hover_text(tr("Keep every Nth analog sample"));
                                 ui.vertical(|ui| {
                                     let r = ui.add(egui::TextEdit::singleline(&mut ratio_text).desired_width(80.0));
-                                    label_text_edit(&r, &ratio_text, "Analog Downsample Ratio");
+                                    label_text_edit(&r, &ratio_text, tr("Analog Downsample Ratio"));
                                     let new_rate = ratio.map_or_else(
                                         || "—".to_owned(),
                                         |r| crate::core::format::sample_rate(rate as f64 / r as f64),
                                     );
-                                    ui.label(muted(&format!("New analog sample rate: {new_rate}")));
+                                    ui.label(muted(&tr("New analog sample rate: {}").replacen("{}", &new_rate, 1)));
                                 });
                                 ui.end_row();
                             }
-                            ui.label(muted("Export Format"));
+                            ui.label(muted(tr("Export Format")));
                             ui.vertical(|ui| {
                                 let segments: Vec<Segment> = FORMATS
                                     .iter()
@@ -382,7 +386,7 @@ impl LaApp {
                                         label: format_label(*f),
                                         enabled: *f != ExportFormat::Sigrok || sigrok_ok,
                                         tooltip: if *f == ExportFormat::Sigrok && !sigrok_ok {
-                                            "Needs the app built with libsigrok"
+                                            tr("Needs the app built with libsigrok")
                                         } else {
                                             format_description(*f)
                                         },
@@ -394,9 +398,9 @@ impl LaApp {
                             });
                             ui.end_row();
                             if FORMATS[format_idx] == ExportFormat::Csv {
-                                ui.label(muted("Use ISO8601 Timestamps"))
-                                    .on_hover_text("Absolute wall-clock times (UTC) instead of seconds from T0");
-                                ui.add(BinarySwitch::new(&mut iso, "Use ISO8601 Timestamps"));
+                                ui.label(muted(tr("Use ISO8601 Timestamps")))
+                                    .on_hover_text(tr("Absolute wall-clock times (UTC) instead of seconds from T0"));
+                                ui.add(BinarySwitch::new(&mut iso, tr("Use ISO8601 Timestamps")));
                                 ui.end_row();
                             }
                         });
@@ -405,7 +409,7 @@ impl LaApp {
                 // the height below it.
                 let row = vec2(ui.available_width(), 30.0);
                 ui.allocate_ui_with_layout(row, egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                    if ui.add(Button::tertiary("↺ Reset to default")).clicked() {
+                    if ui.add(Button::tertiary(tr("Reset to default"))).clicked() {
                         reset = true;
                     }
                 });
@@ -413,44 +417,50 @@ impl LaApp {
 
                 // Export location.
                 ui.label(
-                    egui::RichText::new("Export Location").text_style(Text::Subhead.style()).color(c(Token::Ink2)),
+                    egui::RichText::new(tr("Export Location")).text_style(Text::Subhead.style()).color(c(Token::Ink2)),
                 );
                 ui.add_space(8.0);
                 ui.horizontal(|ui| {
-                    ui.label(muted("Folder"));
+                    ui.label(muted(tr("Folder")));
                     let mut path = folder_text.clone();
                     ui.add(
                         egui::TextEdit::singleline(&mut path)
                             .interactive(false)
                             .desired_width(ui.available_width() - 110.0),
                     );
-                    let label = if picking { "Browsing…" } else { "Browse" };
+                    let label = if picking { tr("Browsing…") } else { tr("Browse") };
                     if ui.add_enabled(!picking, Button::secondary(label)).clicked() {
                         browse = true;
                     }
                 });
                 ui.horizontal(|ui| {
-                    ui.label(muted("File name"));
+                    ui.label(muted(tr("File name")));
                     let r = ui.add(egui::TextEdit::singleline(&mut file_name).desired_width(ui.available_width()));
-                    label_text_edit(&r, &file_name, "File name");
+                    label_text_edit(&r, &file_name, tr("File name"));
                 });
                 ui.add_space(4.0);
-                ui.add(Checkbox::new(&mut always, "Always Replace"));
+                ui.add(Checkbox::new(&mut always, tr("Always Replace")));
                 ui.add_space(16.0);
 
                 // Included channels.
                 ui.label(
-                    egui::RichText::new(format!("Included Channels  {n_included} of {}", captured.len()))
-                        .text_style(Text::Subhead.style())
-                        .color(c(Token::Ink2)),
+                    egui::RichText::new(
+                        tr("Included Channels  {} of {}").replacen("{}", &n_included.to_string(), 1).replacen(
+                            "{}",
+                            &captured.len().to_string(),
+                            1,
+                        ),
+                    )
+                    .text_style(Text::Subhead.style())
+                    .color(c(Token::Ink2)),
                 );
                 ui.add_space(8.0);
                 if !items_d.is_empty() {
-                    grid_d = channel_grid(ui, "Digital", items_d);
+                    grid_d = channel_grid(ui, tr("Digital"), items_d);
                     ui.add_space(12.0);
                 }
                 if !items_a.is_empty() {
-                    grid_a = channel_grid(ui, "Analog", items_a);
+                    grid_a = channel_grid(ui, tr("Analog"), items_a);
                 }
                 ui.add_space(8.0);
             });
@@ -462,7 +472,12 @@ impl LaApp {
             ui.add_space(12.0);
             let n = files.len();
             let fmt = format_label(format);
-            ui.label(muted(&format!("Export will write {n} {fmt} {}:", if n == 1 { "file" } else { "files" })));
+            let text = if n == 1 {
+                tr("Export will write 1 {} file:").replacen("{}", fmt, 1)
+            } else {
+                tr("Export will write {} {} files:").replacen("{}", &n.to_string(), 1).replacen("{}", fmt, 1)
+            };
+            ui.label(muted(&text));
             let mono = egui::FontId::new(12.0, crate::ui::typography::family(crate::ui::typography::MONO));
             // File names only: the folder is shown above.
             for p in files.iter().take(6) {
@@ -470,16 +485,17 @@ impl LaApp {
                 ui.label(egui::RichText::new(name).font(mono.clone()).color(c(Token::Ink2)));
             }
             if files.len() > 6 {
-                ui.label(muted(&format!("… and {} more", files.len() - 6)));
+                ui.label(muted(&tr("… and {} more").replacen("{}", &(files.len() - 6).to_string(), 1)));
             }
             if let Some(e) = est {
-                let text = format!(
-                    "≈ {}rows · ~{}",
-                    crate::core::format::si_sig(e.rows as f64, "", 2),
-                    crate::core::format::si_sig(e.bytes as f64, "B", 2)
-                );
+                let text = tr("≈ {}rows · ~{}")
+                    .replacen("{}", &crate::core::format::si_sig(e.rows as f64, "", 2), 1)
+                    .replacen("{}", &crate::core::format::si_sig(e.bytes as f64, "B", 2), 1);
                 if e.bytes > LARGE_EXPORT {
-                    ui.label(egui::RichText::new(format!("{text} — This is a large file.")).color(c(Token::Caution)));
+                    ui.label(
+                        egui::RichText::new(tr("{} — This is a large file.").replacen("{}", &text, 1))
+                            .color(c(Token::Caution)),
+                    );
                 } else {
                     ui.label(muted(&text));
                 }
@@ -487,10 +503,10 @@ impl LaApp {
             ui.add_space(16.0);
             let row = vec2(ui.available_width(), 40.0);
             ui.allocate_ui_with_layout(row, egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                if ui.add_enabled(can_export, Button::primary("✓ Export")).clicked() {
+                if ui.add_enabled(can_export, Button::primary(tr("✓ Export"))).clicked() {
                     export = true;
                 }
-                if ui.add(Button::secondary("Cancel")).clicked() {
+                if ui.add(Button::secondary(tr("Cancel"))).clicked() {
                     cancel = true;
                 }
             });
@@ -562,11 +578,14 @@ impl LaApp {
         let resp = Modal::new(Id::unique("export_replace")).frame(modal_frame(ctx)).show(ctx, |ui| {
             ui.set_width(460.0);
             ui.label(
-                egui::RichText::new("Replace Files").text_style(Text::Display.style()).color(theme.color(Token::Ink1)),
+                egui::RichText::new(tr("Replace Files"))
+                    .text_style(Text::Display.style())
+                    .color(theme.color(Token::Ink1)),
             );
             ui.add_space(16.0);
             ui.label(
-                egui::RichText::new(format!("These files already exist in {folder}:")).color(theme.color(Token::Ink2)),
+                egui::RichText::new(tr("These files already exist in {}:").replacen("{}", &folder, 1))
+                    .color(theme.color(Token::Ink2)),
             );
             ui.add_space(8.0);
             for p in &existing {
@@ -576,11 +595,11 @@ impl LaApp {
             ui.add_space(20.0);
             let row = vec2(ui.available_width(), 40.0);
             ui.allocate_ui_with_layout(row, egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                if ui.add(Button::destructive("Replace")).clicked() {
+                if ui.add(Button::destructive(tr("Replace"))).clicked() {
                     replace = true;
                 }
                 ui.add_space(8.0);
-                if ui.add(Button::secondary("Cancel")).clicked() {
+                if ui.add(Button::secondary(tr("Cancel"))).clicked() {
                     cancel = true;
                 }
             });

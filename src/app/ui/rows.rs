@@ -9,6 +9,7 @@ use crate::core::format::{si, time_short};
 use crate::core::ticks::value_ticks;
 use crate::core::{CaptureTime, ChannelId, ChannelKind, ViewState};
 use crate::engine::measure::{measure_analog, measure_digital};
+use crate::l10n::tr;
 use crate::store::{AnalogChannel, DigitalChannel};
 use crate::ui::Token;
 use crate::ui::theme::{Theme, ThemeExt};
@@ -321,7 +322,7 @@ impl LaApp {
                 if row.channel.is_bus() {
                     s.live_bus_value(row.channel.index).map(|v| (v, None, p.stale))
                 } else {
-                    p.level(row.channel).map(|l| (if l { "high" } else { "low" }.to_owned(), Some(l), p.stale))
+                    p.level(row.channel).map(|l| (if l { tr("high") } else { tr("low") }.to_owned(), Some(l), p.stale))
                 }
             });
             let live_font = Text::ValueS.font_id();
@@ -400,7 +401,9 @@ impl LaApp {
                     ui.make_persistent_id(("row_name", row.channel)),
                     Sense::click(),
                 );
-                n.widget_info(|| WidgetInfo::labeled(Role::Button, true, format!("Rename {}", row.identifier())));
+                n.widget_info(|| {
+                    WidgetInfo::labeled(Role::Button, true, tr("Rename {}").replacen("{}", &row.identifier(), 1))
+                });
                 if n.hovered() && !editing {
                     painter.rect_stroke(
                         name_rect,
@@ -452,7 +455,7 @@ impl LaApp {
         for (id, c, collapsed) in triangles {
             let tri = Rect::from_center_size(c, vec2(16.0, 16.0));
             let resp = ui.interact(tri.intersect(l.rows), ui.make_persistent_id(("bus_toggle", id)), Sense::click());
-            let label = if collapsed { "Expand group" } else { "Collapse group" };
+            let label = if collapsed { tr("Expand group") } else { tr("Collapse group") };
             resp.widget_info(|| WidgetInfo::labeled(Role::Button, true, label));
             let ink = if resp.hovered() { theme.color(Token::Ink1) } else { theme.color(Token::Ink3) };
             let pts = if collapsed {
@@ -470,7 +473,7 @@ impl LaApp {
                 Rect::from_min_max(pos2(left, bottom - RESIZE_HANDLE / 2.0), pos2(right, bottom + RESIZE_HANDLE / 2.0));
             let h =
                 ui.interact(handle.intersect(l.rows), ui.make_persistent_id(("row_resize", channel)), Sense::drag());
-            h.widget_info(|| WidgetInfo::labeled(Role::Splitter, true, format!("Resize {ident}")));
+            h.widget_info(|| WidgetInfo::labeled(Role::Splitter, true, tr("Resize {}").replacen("{}", &ident, 1)));
             if h.hovered() || h.dragged() {
                 ui.ctx().set_cursor_icon(egui::CursorIcon::ResizeVertical);
             }
@@ -534,9 +537,9 @@ impl LaApp {
             self.mark_settings_dirty();
             let toast = crate::ui::toast::Toast::new(
                 crate::ui::toast::ToastKind::Info,
-                "Use the mouse wheel over the channel names, or Page Up / Page Down, to scroll through the rows.",
+                tr("Use the mouse wheel over the channel names, or Page Up / Page Down, to scroll through the rows."),
             )
-            .heading("More rows than fit");
+            .heading(tr("More rows than fit"));
             self.toast(toast);
         }
         if max_scroll > 0.0 {
@@ -625,9 +628,9 @@ impl LaApp {
         }
         let (Some(w), Some(period)) = (pulse.width(), pulse.period()) else { return };
         let lines_text = [
-            format!("Duty: {:.2} %", pulse.duty_percent().unwrap_or(0.0)),
-            format!("Freq: {}", si(1.0 / secs(period), "Hz", Some(3))),
-            format!("width⁻¹: {}", si(1.0 / secs(w), "Hz", Some(3))),
+            tr("Duty: {} %").replacen("{}", &format!("{:.2}", pulse.duty_percent().unwrap_or(0.0)), 1),
+            tr("Freq: {}").replacen("{}", &si(1.0 / secs(period), "Hz", Some(3)), 1),
+            tr("1/width: {}").replacen("{}", &si(1.0 / secs(w), "Hz", Some(3)), 1),
         ];
         // Info box: 30 pt from the right edge, or the left one when the
         // pointer is in the right part of the plot.

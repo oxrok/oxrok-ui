@@ -176,8 +176,14 @@ impl LaApp {
         }
         let menu = Menu::new();
         // The app menu.
-        let quit = MenuItem::with_id("sp:quit", format!("Quit {APP_NAME}"), true, "Cmd+KeyQ".parse().ok());
-        let settings = MenuItem::with_id("cmd:settings.open", "Settings…", true, accelerator("settings.open"));
+        let quit = MenuItem::with_id(
+            "sp:quit",
+            crate::l10n::tr("Quit {}").replacen("{}", APP_NAME, 1),
+            true,
+            "Cmd+KeyQ".parse().ok(),
+        );
+        let settings =
+            MenuItem::with_id("cmd:settings.open", crate::l10n::tr("Settings…"), true, accelerator("settings.open"));
         let app = Submenu::with_items(
             APP_NAME,
             true,
@@ -197,9 +203,9 @@ impl LaApp {
             let _ = menu.append(&app);
         }
         let window = Submenu::with_items(
-            "Window",
+            crate::l10n::tr("Window"),
             true,
-            &[&PredefinedMenuItem::minimize(None), &PredefinedMenuItem::maximize(Some("Zoom"))],
+            &[&PredefinedMenuItem::minimize(None), &PredefinedMenuItem::maximize(Some(crate::l10n::tr("Zoom")))],
         );
         for (id, title, nodes) in &model {
             if *id == "help"

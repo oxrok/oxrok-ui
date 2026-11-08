@@ -27,7 +27,9 @@ pub fn stepper(ui: &mut Ui, label: &str, value_text: &str, can_dec: bool, can_in
     for (r, sign, ok, name) in [(minus, -1, can_dec, "Decrease"), (plus, 1, can_inc, "Increase")] {
         let resp: Response =
             ui.interact(r, ui.scope_id().with((label, name)), if ok { Sense::click() } else { Sense::hover() });
-        resp.widget_info(|| WidgetInfo::labeled(Role::Button, enabled && ok, format!("{name} {label}")));
+        resp.widget_info(|| {
+            WidgetInfo::labeled(Role::Button, enabled && ok, format!("{} {}", crate::l10n::tr(name), label))
+        });
         let c = if !ok || !enabled {
             theme.color(Token::Ink5)
         } else if resp.hovered() {

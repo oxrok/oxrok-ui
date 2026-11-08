@@ -5,6 +5,7 @@ use crate::app::LaApp;
 use crate::app::session::Session;
 use crate::app::sessions::{CREATE_BLOCKED, SWITCH_BLOCKED};
 use crate::app::worker::SessionId;
+use crate::l10n::tr;
 use crate::ui::Token;
 use crate::ui::icons;
 use crate::ui::theme::ThemeExt;
@@ -44,7 +45,7 @@ fn origin_mark(p: &egui::Painter, s: &Session, c: egui::Pos2, color: Color32) {
 }
 
 fn origin_tip(s: &Session) -> Option<&'static str> {
-    if s.is_unsaved() { Some("Not saved") } else { None }
+    if s.is_unsaved() { Some(tr("Not saved")) } else { None }
 }
 
 fn has_mark(s: &Session) -> bool {
@@ -239,12 +240,12 @@ impl LaApp {
             .show(&ctx, |ui| {
                 popover_frame(ui).show(ui, |ui| {
                     ui.set_width(POPOVER_W);
-                    menu_title(ui, "Sessions");
+                    menu_title(ui, tr("Sessions"));
                     if !self.ui.sessions_filter.is_empty() {
                         ui.horizontal(|ui| {
                             ui.add_space(12.0);
                             ui.label(
-                                egui::RichText::new(format!("Filter: {}", self.ui.sessions_filter))
+                                egui::RichText::new(tr("Filter: {}").replacen("{}", &self.ui.sessions_filter, 1))
                                     .text_style(Text::CaptionMed.style())
                                     .color(theme.color(Token::Ink4)),
                             );
@@ -284,7 +285,7 @@ impl LaApp {
                                     .font(Text::Prose.font_id())
                                     .id(Id::unique(("sess-rename", id))),
                             );
-                            super::label_text_edit(&te, &text, "Session name");
+                            super::label_text_edit(&te, &text, tr("Session name"));
                             if !te.has_focus() && !te.lost_focus() {
                                 te.request_focus();
                             }
@@ -329,7 +330,9 @@ impl LaApp {
                                 Id::unique(("sess-close", id)),
                                 Sense::click(),
                             );
-                            close.widget_info(|| WidgetInfo::labeled(Role::Button, true, format!("Close {name}")));
+                            close.widget_info(|| {
+                                WidgetInfo::labeled(Role::Button, true, tr("Close {}").replacen("{}", name, 1))
+                            });
                             let bg = if close.hovered() { Token::Seam } else { Token::Lift };
                             ui.painter().circle_filled(c, 8.0, theme.color(bg));
                             icons::close(
@@ -342,7 +345,7 @@ impl LaApp {
                                 continue;
                             }
                         }
-                        let resp = if blocked { resp.on_hover_text(SWITCH_BLOCKED) } else { resp };
+                        let resp = if blocked { resp.on_hover_text(tr(SWITCH_BLOCKED)) } else { resp };
                         if resp.double_clicked() {
                             *act = Some(Act::Rename(*id));
                         } else if resp.clicked() && !blocked {
@@ -383,7 +386,7 @@ impl LaApp {
                     menu_separator(ui);
                     let (rect, resp) = ui.allocate_exact_size(vec2(POPOVER_W, 32.0), Sense::click());
                     let enabled = create_blocked.is_none();
-                    resp.widget_info(|| WidgetInfo::labeled(Role::Button, enabled, "New Session"));
+                    resp.widget_info(|| WidgetInfo::labeled(Role::Button, enabled, tr("New Session")));
                     let c = theme.color(Token::FlareLink).gamma_multiply(if enabled { 1.0 } else { 0.6 });
                     if resp.hovered() && enabled {
                         ui.painter().rect_filled(rect, 0.0, theme.color(Token::Lift));
@@ -396,11 +399,11 @@ impl LaApp {
                     ui.painter().text(
                         pos2(rect.left() + 38.0, rect.center().y),
                         Align2::LEFT_CENTER,
-                        "New Session",
+                        tr("New Session"),
                         Text::Prose.font_id(),
                         c,
                     );
-                    let resp = if enabled { resp } else { resp.on_hover_text(CREATE_BLOCKED) };
+                    let resp = if enabled { resp } else { resp.on_hover_text(tr(CREATE_BLOCKED)) };
                     if resp.clicked() && enabled {
                         *act = Some(Act::New);
                     }
@@ -426,30 +429,31 @@ impl LaApp {
         let can_close = self.close_refused(id);
         let others = self.session_count() > 1;
         ui.set_min_width(220.0);
-        if menu_item(ui, "Rename Session", None).clicked() {
+        if menu_item(ui, tr("Rename Session"), None).clicked() {
             *act = Some(Act::Rename(id));
             ui.close();
         }
         menu_separator(ui);
-        let save_tip = "Record a capture before saving.";
-        let r = ui.add_enabled_ui(can_save, |ui| menu_item(ui, "Save Capture", Some(&shortcut("S")))).inner;
+        let save_tip = tr("Record a capture before saving.");
+        let r = ui.add_enabled_ui(can_save, |ui| menu_item(ui, tr("Save Capture"), Some(&shortcut("S")))).inner;
         if r.on_disabled_hover_text(save_tip).clicked() {
             *act = Some(Act::Save(id, false));
             ui.close();
         }
-        let r = ui.add_enabled_ui(can_save, |ui| menu_item(ui, "Save Capture As…", Some(&shortcut("Shift+S")))).inner;
+        let r =
+            ui.add_enabled_ui(can_save, |ui| menu_item(ui, tr("Save Capture As…"), Some(&shortcut("Shift+S")))).inner;
         if r.on_disabled_hover_text(save_tip).clicked() {
             *act = Some(Act::Save(id, true));
             ui.close();
         }
         menu_separator(ui);
-        let r = ui.add_enabled_ui(can_close.is_none(), |ui| menu_item(ui, "Close Session", Some(&shortcut("W"))));
-        if r.inner.on_disabled_hover_text(can_close.unwrap_or_default()).clicked() {
+        let r = ui.add_enabled_ui(can_close.is_none(), |ui| menu_item(ui, tr("Close Session"), Some(&shortcut("W"))));
+        if r.inner.on_disabled_hover_text(tr(can_close.unwrap_or_default())).clicked() {
             *act = Some(Act::Close(id));
             ui.close();
         }
-        let r = ui.add_enabled_ui(others, |ui| menu_item(ui, "Close Other Sessions", None));
-        if r.inner.on_disabled_hover_text("There are no other sessions.").clicked() {
+        let r = ui.add_enabled_ui(others, |ui| menu_item(ui, tr("Close Other Sessions"), None));
+        if r.inner.on_disabled_hover_text(tr("There are no other sessions.")).clicked() {
             *act = Some(Act::CloseOthers(id));
             ui.close();
         }

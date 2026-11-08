@@ -6,6 +6,7 @@ use crate::core::animator::{Anchor, JUMP_DURATION, ViewRequest};
 use crate::core::format::{time_full, wall_clock};
 use crate::core::markers::{MARKER_PALETTE, MarkerKind, MarkerRef, SNAP_PT, TimeOrigin, snap_x};
 use crate::core::{CaptureTime, ChannelKind, ViewState};
+use crate::l10n::tr;
 use crate::ui::Token;
 use crate::ui::icons;
 use crate::ui::theme::ThemeExt;
@@ -188,7 +189,7 @@ impl LaApp {
                 offscreen[k] += w + 2.0;
                 let chip = Rect::from_min_size(pos2(cx, l.ruler.top() + 4.0), vec2(w, 14.0));
                 let resp = ui.interact(chip, ui.make_persistent_id(("marker_chip", *r)), Sense::click());
-                resp.widget_info(|| WidgetInfo::labeled(Role::Button, true, format!("Go to {name}")));
+                resp.widget_info(|| WidgetInfo::labeled(Role::Button, true, tr("Go to {}").replacen("{}", name, 1)));
                 painter.rect_filled(chip, 3.0, base);
                 edge_arrow(&painter, chip, left, Color32::WHITE);
                 let at = chip.center() + vec2(if left { 5.0 } else { -5.0 }, 0.0);
@@ -384,44 +385,51 @@ impl LaApp {
         let trim_items: Vec<super::trim::TrimItem> = if item.is_pair() {
             let (a, b) = item.span();
             vec![
-                ("Before This Marker", Some(at), None, name.clone()),
-                ("After This Marker", None, Some(at), name.clone()),
+                (tr("Before This Marker"), Some(at), None, name.clone()),
+                (tr("After This Marker"), None, Some(at), name.clone()),
                 (
-                    "Outside Pair",
+                    tr("Outside Pair"),
                     Some(a),
                     Some(b),
-                    format!("from {} to {}", item.side_name(Some(0)), item.side_name(Some(1))),
+                    tr("from {} to {}").replacen("{}", &item.side_name(Some(0)), 1).replacen(
+                        "{}",
+                        &item.side_name(Some(1)),
+                        1,
+                    ),
                 ),
             ]
         } else {
-            vec![("Before Marker", Some(at), None, name.clone()), ("After Marker", None, Some(at), name.clone())]
+            vec![
+                (tr("Before Marker"), Some(at), None, name.clone()),
+                (tr("After Marker"), None, Some(at), name.clone()),
+            ]
         };
         let mut trim = None;
         let mut act = None;
         popup.frame(popover_frame(ui)).width(220.0).show(|ui| {
-            if menu_item(ui, "Edit", None).clicked() {
+            if menu_item(ui, tr("Edit"), None).clicked() {
                 act = Some("edit");
             }
             menu_separator(ui);
-            if menu_item(ui, "Go to Marker", None).clicked() {
+            if menu_item(ui, tr("Go to Marker"), None).clicked() {
                 act = Some("goto");
             }
-            if menu_check_item(ui, "Set as t₀", is_t0, None).clicked() {
+            if menu_check_item(ui, tr("Set as t₀"), is_t0, None).clicked() {
                 act = Some("t0");
             }
             if item.is_pair() {
-                if menu_item(ui, "Go to Pair", None).clicked() {
+                if menu_item(ui, tr("Go to Pair"), None).clicked() {
                     act = Some("goto_pair");
                 }
-                if menu_item(ui, "Zoom on Pair", None).clicked() {
+                if menu_item(ui, tr("Zoom on Pair"), None).clicked() {
                     act = Some("zoom_pair");
                 }
-                if menu_item(ui, "Ungroup Pair", None).clicked() {
+                if menu_item(ui, tr("Ungroup Pair"), None).clicked() {
                     act = Some("ungroup");
                 }
             } else {
                 ui.add_enabled_ui(two_singles, |ui| {
-                    if menu_item(ui, "Create Pair", None).clicked() {
+                    if menu_item(ui, tr("Create Pair"), None).clicked() {
                         act = Some("pair");
                     }
                 });
@@ -429,10 +437,10 @@ impl LaApp {
             if let Some(k) = self.delete_data_submenu(ui, &trim_items) {
                 trim = Some(k);
             }
-            if menu_item(ui, "Delete", Some("Del")).clicked() {
+            if menu_item(ui, tr("Delete"), Some("Del")).clicked() {
                 act = Some("delete");
             }
-            if menu_item(ui, "Delete All", None).clicked() {
+            if menu_item(ui, tr("Delete All"), None).clicked() {
                 act = Some("delete_all");
             }
         });
@@ -513,9 +521,9 @@ impl LaApp {
                         egui::TextEdit::multiline(&mut note)
                             .desired_rows(3)
                             .desired_width(f32::INFINITY)
-                            .hint_text("Comment here…"),
+                            .hint_text(tr("Comment here…")),
                     );
-                    super::label_text_edit(&r, &note, "Marker note");
+                    super::label_text_edit(&r, &note, tr("Marker note"));
                     if !ui.memory(|m| m.has_focus(r.id)) && ui.ctx().memory(|m| m.focused().is_none()) {
                         r.request_focus();
                     }
@@ -528,7 +536,12 @@ impl LaApp {
                             let h = if k == color { 20.0 } else { 16.0 };
                             let (rect, resp) = ui.allocate_exact_size(vec2(16.0, 20.0), Sense::click());
                             resp.widget_info(|| {
-                                WidgetInfo::selected(Role::Button, true, k == color, format!("Color {}", k + 1))
+                                WidgetInfo::selected(
+                                    Role::Button,
+                                    true,
+                                    k == color,
+                                    tr("Color {}").replacen("{}", &(k + 1).to_string(), 1),
+                                )
                             });
                             let g = Rect::from_min_size(pos2(rect.left(), rect.bottom() - h), vec2(16.0, h));
                             icons::pennant(ui.painter(), g, c32(*rgb));
@@ -538,10 +551,10 @@ impl LaApp {
                         }
                         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                             let (rect, resp) = ui.allocate_exact_size(vec2(18.0, 18.0), Sense::click());
-                            resp.widget_info(|| WidgetInfo::labeled(Role::Button, true, "Delete marker"));
+                            resp.widget_info(|| WidgetInfo::labeled(Role::Button, true, tr("Delete marker")));
                             let c = if resp.hovered() { Token::Alert } else { Token::Ink3 };
                             icons::trash(ui.painter(), rect, theme.color(c));
-                            if resp.on_hover_text("Delete").clicked() {
+                            if resp.on_hover_text(tr("Delete")).clicked() {
                                 delete = true;
                             }
                         });
@@ -572,7 +585,7 @@ impl LaApp {
     /// right-click on the time ruler.
     fn time_zero_menu(&mut self, ui: &Ui, l: &Layout) {
         let resp = ui.interact(l.ruler, ui.make_persistent_id("ruler"), Sense::click());
-        resp.widget_info(|| WidgetInfo::labeled(Role::Unknown, true, "Time ruler"));
+        resp.widget_info(|| WidgetInfo::labeled(Role::Unknown, true, tr("Time ruler")));
         let Some(s) = self.session.as_ref() else { return };
         let origin = s.origin;
         let lines: Vec<(MarkerRef, String)> = s.markers.lines().map(|(r, i)| (r, i.side_name(r.side))).collect();
@@ -586,27 +599,27 @@ impl LaApp {
         let v = s.view.state();
         let t = v.px_to_time(self.ui.ruler_menu_x as f64);
         let t0 = s.origin.resolve(&s.markers, s.trigger);
-        let point = format!("this point ({})", crate::core::format::time_full(t - t0));
+        let point = tr("this point ({})").replacen("{}", &crate::core::format::time_full(t - t0), 1);
         let trim_items = super::trim::point_items(t, &point, Some((v.left_time, v.right_time())));
         let mut trim = None;
         let mut pick = None;
         let mut jump = false;
         let mut time_settings = false;
         Popup::context_menu(&resp).frame(popover_frame(ui)).width(240.0).show(|ui| {
-            menu_title(ui, "Set Time Relative To");
-            let start = menu_check_item(ui, "Start of Capture", origin == TimeOrigin::CaptureStart, None);
-            if start.on_hover_text("t₀ will be set to the beginning of the capture.").clicked() {
+            menu_title(ui, tr("Set Time Relative To"));
+            let start = menu_check_item(ui, tr("Start of Capture"), origin == TimeOrigin::CaptureStart, None);
+            if start.on_hover_text(tr("t₀ will be set to the beginning of the capture.")).clicked() {
                 pick = Some(TimeOrigin::CaptureStart);
             }
             ui.add_enabled_ui(triggered, |ui| {
-                let r = menu_check_item(ui, "Trigger", origin == TimeOrigin::Trigger, None);
-                if r.on_hover_text("t₀ at the trigger; the capture start until a trigger is found.").clicked() {
+                let r = menu_check_item(ui, tr("Trigger"), origin == TimeOrigin::Trigger, None);
+                if r.on_hover_text(tr("t₀ at the trigger; the capture start until a trigger is found.")).clicked() {
                     pick = Some(TimeOrigin::Trigger);
                 }
             });
             ui.add_enabled_ui(!lines.is_empty(), |ui| {
                 let on_marker = matches!(origin, TimeOrigin::Marker(_));
-                super::rowctl::submenu_checked(ui, "Timing Marker", on_marker, 160.0, |ui| {
+                super::rowctl::submenu_checked(ui, tr("Timing Marker"), on_marker, 160.0, |ui| {
                     for (r, name) in &lines {
                         if menu_check_item(ui, name, origin == TimeOrigin::Marker(*r), None).clicked() {
                             pick = Some(TimeOrigin::Marker(*r));
@@ -614,8 +627,8 @@ impl LaApp {
                     }
                 });
             });
-            let wall = menu_check_item(ui, "Wall Clock Time", origin == TimeOrigin::WallClock, None);
-            if wall.on_hover_text("Labels show the date and time (ISO and UTC options in Settings).").clicked() {
+            let wall = menu_check_item(ui, tr("Wall Clock Time"), origin == TimeOrigin::WallClock, None);
+            if wall.on_hover_text(tr("Labels show the date and time (ISO and UTC options in Settings).")).clicked() {
                 pick = Some(TimeOrigin::WallClock);
             }
             menu_separator(ui);
@@ -625,11 +638,11 @@ impl LaApp {
             if self.can_trim() {
                 menu_separator(ui);
             }
-            if menu_item(ui, "Jump to Time", Some("G")).clicked() {
+            if menu_item(ui, tr("Jump to Time"), Some("G")).clicked() {
                 jump = true;
             }
             menu_separator(ui);
-            if menu_item(ui, "Time Settings…", None).clicked() {
+            if menu_item(ui, tr("Time Settings…"), None).clicked() {
                 time_settings = true;
             }
         });
@@ -671,12 +684,12 @@ impl LaApp {
             let cx = if left { l.ruler.left() } else { l.ruler.right() - w };
             let chip = Rect::from_min_size(pos2(cx, l.ruler.bottom() - 18.0), vec2(w, 14.0));
             let resp = ui.interact(chip, ui.make_persistent_id("trigger_chip"), Sense::click());
-            resp.widget_info(|| WidgetInfo::labeled(Role::Button, true, "Go to trigger"));
+            resp.widget_info(|| WidgetInfo::labeled(Role::Button, true, tr("Go to trigger")));
             painter.rect_filled(chip, 3.0, TRIGGER_COLOR);
             edge_arrow(&painter, chip, left, Color32::BLACK);
             let at = chip.center() + vec2(if left { 4.0 } else { -4.0 }, 0.0);
             painter.text(at, Align2::CENTER_CENTER, text, font, Color32::BLACK);
-            if resp.on_hover_text("Trigger").clicked() {
+            if resp.on_hover_text(tr("Trigger")).clicked() {
                 self.center_on(t);
             }
             return;
@@ -688,20 +701,20 @@ impl LaApp {
         // heads keep the top.
         let flag = Rect::from_min_size(pos2(x, l.ruler.bottom() - 18.0), vec2(12.0, 14.0));
         let resp = ui.interact(flag, ui.make_persistent_id("trigger_flag"), Sense::click());
-        resp.widget_info(|| WidgetInfo::labeled(Role::Button, true, "Trigger"));
+        resp.widget_info(|| WidgetInfo::labeled(Role::Button, true, tr("Trigger")));
         painter.rect_filled(flag, CornerRadius { nw: 0, ne: 4, sw: 0, se: 4 }, TRIGGER_COLOR);
         painter.text(flag.center(), Align2::CENTER_CENTER, "T", FontId::new(10.0, family(SANS_MEDIUM)), Color32::BLACK);
-        let resp = resp.on_hover_text("Trigger");
+        let resp = resp.on_hover_text(tr("Trigger"));
         let mut set = false;
         // Delete Data before / after the trigger.
         let trim_items: Vec<super::trim::TrimItem> = vec![
-            ("Before Trigger", Some(t), None, "the trigger".to_owned()),
-            ("After Trigger", None, Some(t), "the trigger".to_owned()),
+            (tr("Before Trigger"), Some(t), None, tr("the trigger").to_owned()),
+            (tr("After Trigger"), None, Some(t), tr("the trigger").to_owned()),
         ];
         let mut trim = None;
         Popup::context_menu(&resp).frame(popover_frame(ui)).width(200.0).show(|ui| {
             ui.add_enabled_ui(!is_t0, |ui| {
-                if menu_check_item(ui, "Set as t₀", is_t0, None).clicked() {
+                if menu_check_item(ui, tr("Set as t₀"), is_t0, None).clicked() {
                     set = true;
                 }
             });

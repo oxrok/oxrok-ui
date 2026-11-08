@@ -2,6 +2,7 @@
 
 use crate::app::{APP_NAME, AppEvent, LaApp};
 use crate::backend::DeviceInfo;
+use crate::l10n::tr;
 use crate::ui::ThemeExt;
 use crate::ui::icons;
 use crate::ui::theme::Token;
@@ -84,9 +85,9 @@ pub(crate) fn udev_rules_installed() -> bool {
 pub(crate) fn found_text(devices: Option<&[DeviceInfo]>) -> Option<String> {
     let n = devices?.iter().filter(|d| !d.is_demo).count();
     Some(match n {
-        0 => "No device found".to_owned(),
-        1 => "1 device found".to_owned(),
-        n => format!("{n} devices found"),
+        0 => tr("No device found").to_owned(),
+        1 => tr("1 device found").to_owned(),
+        n => tr("{} devices found").replacen("{}", &n.to_string(), 1),
     })
 }
 
@@ -129,26 +130,26 @@ impl LaApp {
     fn connection_cards(&self) -> Vec<Card> {
         let mut cards = vec![Card {
             check: Check::Unknown,
-            title: "Cable and port",
-            text: "Try another USB port or cable. Hubs without power often fail.".into(),
+            title: tr("Cable and port"),
+            text: tr("Try another USB port or cable. Hubs without power often fail.").into(),
         }];
         if cfg!(target_os = "linux") {
             let ok = udev_rules_installed();
             cards.push(Card {
                 check: if ok { Check::Ok } else { Check::Warn },
-                title: "Permissions",
+                title: tr("Permissions"),
                 text: if ok {
-                    "udev rules installed".into()
+                    tr("udev rules installed").into()
                 } else {
-                    "udev rules not found. Replug the device after installing.".into()
+                    tr("udev rules not found. Replug the device after installing.").into()
                 },
             });
         }
         if cfg!(target_os = "windows") {
             cards.push(Card {
                 check: Check::Unknown,
-                title: "Driver",
-                text: "Most devices need the WinUSB driver. Install it with Zadig.".into(),
+                title: tr("Driver"),
+                text: tr("Most devices need the WinUSB driver. Install it with Zadig.").into(),
             });
         }
         cards
@@ -157,11 +158,11 @@ impl LaApp {
     /// The Firmware card's status and text.
     fn firmware_card(&self) -> Card {
         match self.firmware.missing.first() {
-            None => Card { check: Check::Ok, title: "Firmware", text: "No firmware missing".into() },
+            None => Card { check: Check::Ok, title: tr("Firmware"), text: tr("No firmware missing").into() },
             Some(m) => Card {
                 check: Check::Warn,
-                title: "Firmware",
-                text: format!("{} is missing (needed by {})", m.file, m.driver),
+                title: tr("Firmware"),
+                text: tr("{} is missing (needed by {})").replacen("{}", &m.file, 1).replacen("{}", &m.driver, 1),
             },
         }
     }
@@ -194,7 +195,7 @@ impl LaApp {
     pub(crate) fn connection_help_dialog(&mut self, ctx: &Context) {
         let Some(mut d) = self.ui.connection_help.take() else { return };
         let theme = ctx.la_theme();
-        let status = found_text(self.devices.as_deref()).unwrap_or_else(|| "Looking for devices…".into());
+        let status = found_text(self.devices.as_deref()).unwrap_or_else(|| tr("Looking for devices…").into());
         let scanning = self.scanning();
         let cards = self.connection_cards();
         let fw_card = self.firmware_card();
@@ -205,14 +206,14 @@ impl LaApp {
         let mut install = None;
         let resp = Modal::new(Id::unique("connection_help")).frame(super::dialogs::modal_frame(ctx)).show(ctx, |ui| {
             ui.set_width(560.0);
-            title_row(ui, "Device Connection Help", &mut close);
+            title_row(ui, tr("Device Connection Help"), &mut close);
             ui.add_space(16.0);
             // The status row, with Rescan.
             ui.horizontal(|ui| {
                 ui.label(egui::RichText::new(&status).text_style(Text::Lead.style()));
                 // One button, one size, so the dialog doesn't move.
                 ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-                    let label = if scanning { "Scanning…" } else { "Rescan" };
+                    let label = if scanning { tr("Scanning…") } else { tr("Rescan") };
                     if ui.add_enabled(!scanning, Button::secondary(label).min_width(120.0)).clicked() {
                         rescan = true;
                     }
@@ -226,12 +227,14 @@ impl LaApp {
             card(ui, &fw_card, |ui| {
                 for m in missing.iter().skip(1) {
                     ui.label(
-                        egui::RichText::new(format!("{} is missing (needed by {})", m.file, m.driver))
-                            .color(theme.color(Token::Ink3)),
+                        egui::RichText::new(
+                            tr("{} is missing (needed by {})").replacen("{}", &m.file, 1).replacen("{}", &m.driver, 1),
+                        )
+                        .color(theme.color(Token::Ink3)),
                     );
                 }
                 if let Some(m) = missing.first()
-                    && ui.add(Button::secondary("Install…")).clicked()
+                    && ui.add(Button::secondary(tr("Install…"))).clicked()
                 {
                     install = Some(m.file.clone());
                 }
@@ -249,8 +252,8 @@ impl LaApp {
                 ui,
                 &Card {
                     check: Check::Unknown,
-                    title: "Serial and network instruments",
-                    text: "Enter driver:conn, e.g. rigol-ds:conn=tcp-raw/192.168.1.20/5555".into(),
+                    title: tr("Serial and network instruments"),
+                    text: tr("Enter driver:conn, e.g. rigol-ds:conn=tcp-raw/192.168.1.20/5555").into(),
                 },
                 |ui| {
                     ui.horizontal(|ui| {
@@ -259,10 +262,10 @@ impl LaApp {
                                 .hint_text("driver:conn")
                                 .desired_width(ui.available_width() - 110.0),
                         );
-                        super::label_text_edit(&edit, &d.conn, "Connection");
+                        super::label_text_edit(&edit, &d.conn, tr("Connection"));
                         let enter = edit.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter));
                         let ok = parse_conn(&d.conn).is_some() && !d.connecting;
-                        if ui.add_enabled(ok, Button::primary("Connect")).clicked() || enter && ok {
+                        if ui.add_enabled(ok, Button::primary(tr("Connect"))).clicked() || enter && ok {
                             connect = true;
                         }
                         if !recent.is_empty() {
@@ -275,7 +278,7 @@ impl LaApp {
                                 }
                             })
                             .response
-                            .on_hover_text("Recent connections");
+                            .on_hover_text(tr("Recent connections"));
                             if let Some(p) = pick {
                                 d.conn = p;
                             }
@@ -285,11 +288,11 @@ impl LaApp {
             );
             ui.add_space(16.0);
             ui.horizontal(|ui| {
-                if ui.add(Button::secondary("Copy diagnostics")).clicked() {
+                if ui.add(Button::secondary(tr("Copy diagnostics"))).clicked() {
                     copy = true;
                 }
                 ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-                    if ui.add(Button::primary("Close")).clicked() {
+                    if ui.add(Button::primary(tr("Close"))).clicked() {
                         close = true;
                     }
                 });
@@ -303,7 +306,7 @@ impl LaApp {
         }
         if copy {
             ctx.copy_text(self.diagnostics());
-            self.toast(Toast::new(ToastKind::Success, "Diagnostics copied"));
+            self.toast(Toast::new(ToastKind::Success, tr("Diagnostics copied")));
         }
         if connect && let Some((driver, conn)) = parse_conn(&d.conn) {
             d.connecting = true;
@@ -332,12 +335,16 @@ impl LaApp {
                 recent.truncate(RECENT_CONNS);
                 self.mark_settings_dirty();
                 let n = found.len();
-                let text = if n == 1 { "Found 1 device".to_owned() } else { format!("Found {n} devices") };
+                let text = if n == 1 {
+                    tr("Found 1 device").to_owned()
+                } else {
+                    tr("Found {} devices").replacen("{}", &n.to_string(), 1)
+                };
                 self.toast(Toast::new(ToastKind::Success, text));
                 self.rescan_devices();
             }
-            Ok(_) => self.toast(Toast::new(ToastKind::Warning, format!("No device found at {spec}"))),
-            Err(e) => self.toast(Toast::new(ToastKind::Error, e).heading("Connect failed")),
+            Ok(_) => self.toast(Toast::new(ToastKind::Warning, tr("No device found at {}").replacen("{}", &spec, 1))),
+            Err(e) => self.toast(Toast::new(ToastKind::Error, e).heading(tr("Connect failed"))),
         }
     }
 
@@ -359,7 +366,7 @@ impl LaApp {
         let mut close = false;
         let resp = Modal::new(Id::unique("about")).frame(super::dialogs::modal_frame(ctx)).show(ctx, |ui| {
             ui.set_width(520.0);
-            title_row(ui, &format!("About {APP_NAME}"), &mut close);
+            title_row(ui, &tr("About {}").replacen("{}", APP_NAME, 1), &mut close);
             ui.add_space(16.0);
             let mut lines = info.lines();
             ui.horizontal(|ui| {
@@ -379,22 +386,22 @@ impl LaApp {
             ui.add_space(10.0);
             ui.horizontal(|ui| {
                 if let Some(url) = project_url() {
-                    ui.hyperlink_to("Release Notes", format!("{url}/releases"));
+                    ui.hyperlink_to(tr("Release Notes"), format!("{url}/releases"));
                     ui.label("·");
-                    ui.hyperlink_to("User Guide", format!("{url}/wiki"));
+                    ui.hyperlink_to(tr("User Guide"), format!("{url}/wiki"));
                     ui.label("·");
-                    ui.hyperlink_to("Report Issue", format!("{url}/issues"));
+                    ui.hyperlink_to(tr("Report Issue"), format!("{url}/issues"));
                 }
                 ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-                    if ui.add(Button::tertiary("Copy version info")).clicked() {
+                    if ui.add(Button::tertiary(tr("Copy version info"))).clicked() {
                         ui.ctx().copy_text(info.clone());
                     }
                 });
             });
             ui.add_space(12.0);
             let segs = [
-                Segment { label: "License", enabled: true, tooltip: "" },
-                Segment { label: "Third-party notices", enabled: true, tooltip: "" },
+                Segment { label: tr("License"), enabled: true, tooltip: "" },
+                Segment { label: tr("Third-party notices"), enabled: true, tooltip: "" },
             ];
             segmented(ui, "about_tab", &segs, &mut d.tab);
             ui.add_space(8.0);
@@ -411,7 +418,7 @@ impl LaApp {
                 });
             ui.add_space(16.0);
             ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-                if ui.add(Button::primary("Close")).clicked() {
+                if ui.add(Button::primary(tr("Close"))).clicked() {
                     close = true;
                 }
             });
@@ -511,8 +518,10 @@ impl LaApp {
         let (mut close, mut browse, mut extract, mut rescan) = (false, false, false, false);
         let resp = Modal::new(Id::unique("install_firmware")).frame(super::dialogs::modal_frame(ctx)).show(ctx, |ui| {
             ui.set_width(560.0);
-            title_row(ui, &format!("Install firmware for {}", d.family.title), &mut close);
-            ui.label(egui::RichText::new(format!("{} is missing.", d.file)).color(theme.color(Token::Ink4)));
+            title_row(ui, &tr("Install firmware for {}").replacen("{}", d.family.title, 1), &mut close);
+            ui.label(
+                egui::RichText::new(tr("{} is missing.").replacen("{}", &d.file, 1)).color(theme.color(Token::Ink4)),
+            );
             ui.add_space(14.0);
             let step = |ui: &mut Ui, n: &str, title: &str| {
                 ui.horizontal(|ui| {
@@ -520,23 +529,23 @@ impl LaApp {
                     ui.label(egui::RichText::new(title).text_style(Text::Lead.style()));
                 });
             };
-            step(ui, "1", "Download the vendor software");
+            step(ui, "1", tr("Download the vendor software"));
             ui.horizontal(|ui| {
                 ui.add_space(18.0);
                 ui.label(egui::RichText::new(d.family.input).color(theme.color(Token::Ink3)));
                 ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-                    ui.hyperlink_to("Device page ↗", d.family.wiki);
+                    ui.hyperlink_to(tr("Device page ↗"), d.family.wiki);
                 });
             });
             ui.add_space(10.0);
             if d.manual || !can_extract {
-                ui.label(egui::RichText::new("Manual steps").text_style(Text::Lead.style()));
+                ui.label(egui::RichText::new(tr("Manual steps")).text_style(Text::Lead.style()));
                 if !can_extract {
                     ui.label(
                         egui::RichText::new(if d.family.script.is_some() {
-                            "The extraction scripts aren't bundled with this build (make firmware-deps)."
+                            tr("The extraction scripts aren't bundled with this build (make firmware-deps).")
                         } else {
-                            "There is no extraction step for this device."
+                            tr("There is no extraction step for this device.")
                         })
                         .color(theme.color(Token::Ink4)),
                     );
@@ -548,28 +557,28 @@ impl LaApp {
                         ui.set_width(ui.available_width());
                         ui.label(egui::RichText::new(&manual_text).monospace().size(11.0));
                     });
-                if ui.link("Copy").clicked() {
+                if ui.link(tr("Copy")).clicked() {
                     ui.ctx().copy_text(manual_text.clone());
                 }
             } else {
-                step(ui, "2", "Choose the downloaded file");
+                step(ui, "2", tr("Choose the downloaded file"));
                 ui.horizontal(|ui| {
                     ui.add_space(18.0);
                     let mut shown = d.input.as_ref().map_or(String::new(), |p| p.display().to_string());
                     ui.add_enabled(
                         false,
-                        egui::TextEdit::singleline(&mut shown).hint_text("Drop the file here").desired_width(380.0),
+                        egui::TextEdit::singleline(&mut shown).hint_text(tr("Drop the file here")).desired_width(380.0),
                     );
-                    if ui.add(Button::secondary("Browse…")).clicked() {
+                    if ui.add(Button::secondary(tr("Browse…"))).clicked() {
                         browse = true;
                     }
                 });
                 ui.add_space(10.0);
-                step(ui, "3", "Extract");
+                step(ui, "3", tr("Extract"));
                 ui.horizontal(|ui| {
                     ui.add_space(18.0);
                     let ok = d.input.is_some() && !d.running && missing_tools.is_empty();
-                    if ui.add_enabled(ok, Button::primary("Extract firmware")).clicked() {
+                    if ui.add_enabled(ok, Button::primary(tr("Extract firmware"))).clicked() {
                         extract = true;
                     }
                     if d.running {
@@ -581,9 +590,10 @@ impl LaApp {
                     ui.horizontal(|ui| {
                         ui.add_space(18.0);
                         ui.label(
-                            egui::RichText::new(format!("! {t} is needed: {hint}")).color(theme.color(Token::Caution)),
+                            egui::RichText::new(tr("! {} is needed: {}").replacen("{}", t, 1).replacen("{}", &hint, 1))
+                                .color(theme.color(Token::Caution)),
                         );
-                        if ui.link("Copy command").clicked() {
+                        if ui.link(tr("Copy command")).clicked() {
                             ui.ctx().copy_text(hint.clone());
                         }
                     });
@@ -602,22 +612,26 @@ impl LaApp {
                 match &d.result {
                     Some(Ok(files)) => {
                         let n = files.len();
-                        let text =
-                            format!("✓ Installed {n} file{} to {}", if n == 1 { "" } else { "s" }, out_dir.display());
+                        let dir = out_dir.display().to_string();
+                        let text = if n == 1 {
+                            tr("✓ Installed 1 file to {}").replacen("{}", &dir, 1)
+                        } else {
+                            tr("✓ Installed {} files to {}").replacen("{}", &n.to_string(), 1).replacen("{}", &dir, 1)
+                        };
                         ui.label(egui::RichText::new(text).color(theme.color(Token::Good)));
                         ui.horizontal(|ui| {
                             ui.label(
-                                egui::RichText::new("Replug the device if it isn't found.")
+                                egui::RichText::new(tr("Replug the device if it isn't found."))
                                     .color(theme.color(Token::Ink3)),
                             );
-                            if ui.add(Button::secondary("Rescan")).clicked() {
+                            if ui.add(Button::secondary(tr("Rescan"))).clicked() {
                                 rescan = true;
                             }
                         });
                     }
                     Some(Err(e)) => {
                         ui.label(egui::RichText::new(format!("! {e}")).color(theme.color(Token::Alert)));
-                        if ui.link("Copy log").clicked() {
+                        if ui.link(tr("Copy log")).clicked() {
                             ui.ctx().copy_text(d.log.join("\n"));
                         }
                     }
@@ -627,13 +641,13 @@ impl LaApp {
             ui.add_space(16.0);
             ui.horizontal(|ui| {
                 if can_extract {
-                    let label = if d.manual { "Hide manual steps" } else { "Show manual steps" };
+                    let label = if d.manual { tr("Hide manual steps") } else { tr("Show manual steps") };
                     if ui.add(Button::secondary(label)).clicked() {
                         d.manual = !d.manual;
                     }
                 }
                 ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-                    if ui.add(Button::primary("Close")).clicked() {
+                    if ui.add(Button::primary(tr("Close"))).clicked() {
                         close = true;
                     }
                 });
@@ -646,7 +660,7 @@ impl LaApp {
                 let p = if folder {
                     dialogs.pick_folder(None)
                 } else {
-                    dialogs.open_files("Choose the downloaded file", None, &[]).into_iter().next()
+                    dialogs.open_files(tr("Choose the downloaded file"), None, &[]).into_iter().next()
                 };
                 let _ = tx.send(AppEvent::FirmwareInput(p));
                 ctx2.request_repaint();
@@ -683,7 +697,7 @@ pub(crate) fn title_row(ui: &mut Ui, title: &str, close: &mut bool) {
     ui.horizontal(|ui| {
         ui.label(egui::RichText::new(title).text_style(Text::Display.style()).color(theme.color(Token::Ink1)));
         ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-            if super::ranges::icon_button(ui, "Close", icons::close).clicked() {
+            if super::ranges::icon_button(ui, tr("Close"), icons::close).clicked() {
                 *close = true;
             }
         });

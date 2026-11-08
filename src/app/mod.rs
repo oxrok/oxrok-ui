@@ -463,6 +463,7 @@ impl LaApp {
     pub fn with_options(cc: &eframe::CreationContext<'_>, o: AppOptions) -> Self {
         let ctx = cc.egui_ctx.clone();
         let (settings, settings_backup) = o.settings_path.as_deref().map(AppSettings::load).unwrap_or_default();
+        crate::l10n::set(settings.language);
         let theme_kind = settings.appearance.theme.resolve(ctx.system_theme());
         crate::ui::install(&ctx, theme_kind.theme());
         // The UI size keys are commands, not egui's own zoom keys.

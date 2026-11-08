@@ -34,13 +34,14 @@ impl Radix {
     pub const ALL: [Radix; 5] = [Radix::Native, Radix::Bin, Radix::Dec, Radix::Hex, Radix::Ascii];
 
     pub fn label(self) -> &'static str {
-        match self {
+        let en = match self {
             Radix::Native => "Native",
             Radix::Hex => "Hexadecimal",
             Radix::Dec => "Decimal",
             Radix::Bin => "Binary",
             Radix::Ascii => "Ascii",
-        }
+        };
+        crate::l10n::tr(en)
     }
 
     /// The value of a sigrok decoder's `format` option for this radix;

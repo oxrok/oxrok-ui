@@ -17,12 +17,13 @@ impl TriggerEvent {
         [TriggerEvent::Rising, TriggerEvent::Falling, TriggerEvent::PositivePulse, TriggerEvent::NegativePulse];
 
     pub fn label(self) -> &'static str {
-        match self {
+        let en = match self {
             TriggerEvent::Rising => "Rising Edge",
             TriggerEvent::Falling => "Falling Edge",
             TriggerEvent::PositivePulse => "Positive Pulse",
             TriggerEvent::NegativePulse => "Negative Pulse",
-        }
+        };
+        crate::l10n::tr(en)
     }
 
     pub fn is_pulse(self) -> bool {

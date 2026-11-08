@@ -37,7 +37,7 @@ impl Category {
     ];
 
     pub fn label(self) -> &'static str {
-        match self {
+        let en = match self {
             Category::Capture => "Capture",
             Category::SignalNavigation => "Signal Navigation",
             Category::AnalogSignals => "Analog Signals",
@@ -48,7 +48,8 @@ impl Category {
             Category::Misc => "Misc",
             Category::Data => "Data",
             Category::ViewHistory => "View History",
-        }
+        };
+        crate::l10n::tr(en)
     }
 }
 

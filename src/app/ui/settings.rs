@@ -45,7 +45,7 @@ impl Section {
     ];
 
     pub fn label(self) -> &'static str {
-        match self {
+        let en = match self {
             Section::Appearance => "Appearance",
             Section::Waveform => "Waveform",
             Section::TimeLabels => "Time Labels",
@@ -54,7 +54,8 @@ impl Section {
             Section::Decoders => "Decoders",
             Section::History => "Data & History",
             Section::Related => "Related",
-        }
+        };
+        crate::l10n::tr(en)
     }
 
     /// The item labels, for search.
@@ -341,7 +342,19 @@ impl LaApp {
         let s = &mut self.settings;
         match section {
             Section::Appearance => {
-                row(ui, "Theme", SEGMENTED_H, |ui| {
+                row(ui, crate::l10n::tr("Language"), SEGMENTED_H, |ui| {
+                    let names: Vec<&str> = crate::l10n::Language::ALL.iter().map(|l| l.name()).collect();
+                    let i = crate::l10n::Language::ALL.iter().position(|l| *l == s.language).unwrap_or(0);
+                    if let Some(k) = choice(ui, "set-language", &names, i) {
+                        s.language = crate::l10n::Language::ALL[k];
+                        let lang = s.language;
+                        after.push(Box::new(move |app: &mut LaApp| {
+                            crate::l10n::set(lang);
+                            app.ui.ctx.request_repaint();
+                        }));
+                    }
+                });
+                row(ui, crate::l10n::tr("Theme"), SEGMENTED_H, |ui| {
                     let i = ThemePref::ALL.iter().position(|t| *t == s.appearance.theme).unwrap_or(2);
                     if let Some(k) = choice(ui, "set-theme", &["Light", "Dark", "System"], i) {
                         s.appearance.theme = ThemePref::ALL[k];

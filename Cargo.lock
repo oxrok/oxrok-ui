@@ -3464,9 +3464,9 @@ dependencies = [
 
 [[package]]
 name = "oxrok"
-version = "0.2.0-alpha.1"
+version = "0.2.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "38ae8d3f05909697bfd72523a7d5e16246a3d45488b2f216e5c20b3fe260e107"
+checksum = "9bbfc23e80442c4c0f82be2cc29f1e890dbec667431c036d0dc7ec20b58f0189"
 dependencies = [
  "aes",
  "async-hid",
@@ -3495,7 +3495,7 @@ dependencies = [
 
 [[package]]
 name = "oxrok-ui"
-version = "0.2.0-alpha.2"
+version = "0.2.0"
 dependencies = [
  "chrono",
  "crossbeam-channel",

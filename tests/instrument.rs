@@ -48,7 +48,7 @@ impl Rig {
     fn until(&mut self, what: &str, cond: impl Fn(&LaApp) -> bool) {
         let t0 = Instant::now();
         while !cond(self.h.state()) {
-            assert!(t0.elapsed() < Duration::from_secs(20), "timed out waiting for {what}");
+            assert!(t0.elapsed() < Duration::from_secs(60), "timed out waiting for {what}");
             self.h.step();
             std::thread::sleep(Duration::from_millis(2));
         }

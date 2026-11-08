@@ -2,24 +2,23 @@
 
 A Rust/egui frontend for
 [oxrok](https://github.com/oxrok/oxrok): the capture, display,
-measurement and decoding UI for oxrok devices. Version `0.2.0-alpha.2`,
-built on oxrok `0.2.0-alpha.1`.
+measurement and decoding UI for oxrok devices. Version `0.2.0`,
+built on oxrok `0.2.0`.
 
 ## Install
 
 ```sh
-cargo install --locked oxrok-ui --version 0.2.0-alpha.2
+cargo install --locked oxrok-ui
 ```
 
 To try it without hardware, install with the built-in mock devices:
 
 ```sh
-cargo install --locked --features mock oxrok-ui --version 0.2.0-alpha.2
+cargo install --locked --features mock oxrok-ui
 ```
 
 `--locked` builds with the tested dependency versions; without it, a
-newer transitive dependency of RustPython breaks the build. `--version`
-is needed while only prereleases are published.
+newer transitive dependency of RustPython breaks the build.
 
 Prebuilt binaries for macOS, Linux and Windows: see [Packages](#packages).
 

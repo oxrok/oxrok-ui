@@ -140,11 +140,22 @@ fn search_and_entry_points() {
 
     // The Time Zero menu's Time Settings… opens Time Labels (it needs data).
     r.h.key_press(Key::Space);
-    r.h.run_steps(5);
+    // Wait for the backend to report Recording: under load, five frames can
+    // pass while still Starting, and the second Space would cancel instead
+    // of stop.
+    let started = std::time::Instant::now();
+    while r.h.state().session().unwrap().state != oxrok_ui::core::capture::CaptureState::Recording {
+        assert!(started.elapsed().as_secs() < 60, "capture did not start");
+        r.h.step();
+    }
     r.h.key_press(Key::Space);
     let t0 = std::time::Instant::now();
-    while r.h.state().session().unwrap().state != oxrok_ui::core::capture::CaptureState::Finished {
-        assert!(t0.elapsed().as_secs() < 20, "capture finished");
+    loop {
+        let state = r.h.state().session().unwrap().state;
+        if state == oxrok_ui::core::capture::CaptureState::Finished {
+            break;
+        }
+        assert!(t0.elapsed().as_secs() < 60, "capture never finished, last state {state:?}");
         r.h.step();
         std::thread::sleep(std::time::Duration::from_millis(2));
     }

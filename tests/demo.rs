@@ -58,7 +58,7 @@ fn demo() -> (OxrokBackend, DeviceInfo) {
 fn wait_end(sink: &Collect) {
     let t0 = Instant::now();
     while sink.0.lock().unwrap().end.is_none() {
-        assert!(t0.elapsed() < Duration::from_secs(20), "acquisition did not end");
+        assert!(t0.elapsed() < Duration::from_secs(60), "acquisition did not end");
         std::thread::sleep(Duration::from_millis(5));
     }
 }

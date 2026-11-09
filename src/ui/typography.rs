@@ -1,7 +1,9 @@
 //! Fonts and text styles.
 //!
 //! Inter (Regular/Medium/Bold) and JetBrains Mono, both SIL OFL 1.1,
-//! bundled under `assets/fonts/`.
+//! bundled under `assets/fonts/`. Noto Sans SC (SIL OFL 1.1) follows them
+//! for Chinese: subsets with only the translation catalog's characters,
+//! built by `scripts/cjk_font.py`.
 
 use egui::{FontData, FontDefinitions, FontFamily, FontId, TextStyle};
 use std::sync::Arc;
@@ -15,6 +17,9 @@ const INTER_REGULAR: &[u8] = include_bytes!("../../assets/fonts/Inter-Regular.tt
 const INTER_MEDIUM: &[u8] = include_bytes!("../../assets/fonts/Inter-Medium.ttf");
 const INTER_BOLD: &[u8] = include_bytes!("../../assets/fonts/Inter-Bold.ttf");
 const JETBRAINS_MONO: &[u8] = include_bytes!("../../assets/fonts/JetBrainsMono-Regular.ttf");
+const NOTO_SC_REGULAR: &[u8] = include_bytes!("../../assets/fonts/NotoSansSC-Regular-subset.ttf");
+const NOTO_SC_MEDIUM: &[u8] = include_bytes!("../../assets/fonts/NotoSansSC-Medium-subset.ttf");
+const NOTO_SC_BOLD: &[u8] = include_bytes!("../../assets/fonts/NotoSansSC-Bold-subset.ttf");
 
 pub fn family(name: &str) -> FontFamily {
     FontFamily::Name(name.into())
@@ -30,16 +35,22 @@ pub fn font_definitions() -> FontDefinitions {
         ("Inter-Medium", INTER_MEDIUM),
         ("Inter-Bold", INTER_BOLD),
         ("JetBrainsMono-Regular", JETBRAINS_MONO),
+        ("NotoSansSC-Regular", NOTO_SC_REGULAR),
+        ("NotoSansSC-Medium", NOTO_SC_MEDIUM),
+        ("NotoSansSC-Bold", NOTO_SC_BOLD),
     ] {
         defs.font_data.insert(name.into(), Arc::new(FontData::from_static(bytes)));
     }
-    let chain = |first: &str| std::iter::once(first.to_owned()).chain(fallbacks.iter().cloned()).collect::<Vec<_>>();
-    defs.families.insert(family(SANS), chain("Inter-Regular"));
-    defs.families.insert(family(SANS_MEDIUM), chain("Inter-Medium"));
-    defs.families.insert(family(SANS_BOLD), chain("Inter-Bold"));
-    defs.families.insert(family(MONO), chain("JetBrainsMono-Regular"));
-    defs.families.insert(FontFamily::Proportional, chain("Inter-Regular"));
-    defs.families.insert(FontFamily::Monospace, chain("JetBrainsMono-Regular"));
+    // Primary font, then the CJK weight to match, then egui's fallbacks.
+    let chain = |first: &str, cjk: &str| {
+        [first.to_owned(), cjk.to_owned()].into_iter().chain(fallbacks.iter().cloned()).collect::<Vec<_>>()
+    };
+    defs.families.insert(family(SANS), chain("Inter-Regular", "NotoSansSC-Regular"));
+    defs.families.insert(family(SANS_MEDIUM), chain("Inter-Medium", "NotoSansSC-Medium"));
+    defs.families.insert(family(SANS_BOLD), chain("Inter-Bold", "NotoSansSC-Bold"));
+    defs.families.insert(family(MONO), chain("JetBrainsMono-Regular", "NotoSansSC-Regular"));
+    defs.families.insert(FontFamily::Proportional, chain("Inter-Regular", "NotoSansSC-Regular"));
+    defs.families.insert(FontFamily::Monospace, chain("JetBrainsMono-Regular", "NotoSansSC-Regular"));
     defs
 }
 

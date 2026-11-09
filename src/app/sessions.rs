@@ -203,7 +203,7 @@ impl LaApp {
         if self.activate(self.order[j]) {
             self.ui.sessions_flash_until = Some(self.now() + SWITCH_FLASH);
         } else {
-            self.toast(Toast::new(ToastKind::Info, SWITCH_BLOCKED).id("session-blocked"));
+            self.toast(Toast::new(ToastKind::Info, crate::l10n::tr(SWITCH_BLOCKED)).id("session-blocked"));
         }
     }
 
@@ -213,7 +213,7 @@ impl LaApp {
         if let Some(&id) = self.order.get(i)
             && !self.activate(id)
         {
-            self.toast(Toast::new(ToastKind::Info, SWITCH_BLOCKED).id("session-blocked"));
+            self.toast(Toast::new(ToastKind::Info, crate::l10n::tr(SWITCH_BLOCKED)).id("session-blocked"));
         }
     }
 
@@ -236,7 +236,7 @@ impl LaApp {
     /// Close session `id`, asking "Save Capture?" when it's unsaved
     pub(crate) fn request_close(&mut self, id: SessionId) {
         if let Some(why) = self.close_refused(id) {
-            self.toast(Toast::new(ToastKind::Info, why).id("close-refused"));
+            self.toast(Toast::new(ToastKind::Info, crate::l10n::tr(why)).id("close-refused"));
             return;
         }
         let Some(s) = self.session_by_id(id) else { return };
@@ -296,9 +296,13 @@ impl LaApp {
         }
         if refused > 0 {
             let body = if refused == 1 {
-                "1 session couldn't be closed while it's busy.".to_owned()
+                crate::l10n::tr("1 session couldn't be closed while it's busy.").to_owned()
             } else {
-                format!("{refused} sessions couldn't be closed while they're busy.")
+                crate::l10n::tr("{} sessions couldn't be closed while they're busy.").replacen(
+                    "{}",
+                    &refused.to_string(),
+                    1,
+                )
             };
             self.toast(Toast::new(ToastKind::Info, body).id("close-refused"));
         }
@@ -328,16 +332,22 @@ impl LaApp {
     /// The state line under a session's name.
     pub fn session_state_text(&self, s: &Session) -> String {
         let state = match s.state {
-            CaptureState::Starting | CaptureState::Recording | CaptureState::Stopping => "Recording".to_owned(),
+            CaptureState::Starting | CaptureState::Recording | CaptureState::Stopping => {
+                crate::l10n::tr("Recording").to_owned()
+            }
             _ if s.opened_from.is_some() => {
                 let name = s.opened_from.as_deref().and_then(|p| p.file_name()).map(|n| n.to_string_lossy());
-                format!("Opened from {}", name.unwrap_or_default())
+                crate::l10n::tr("Opened from {}").replacen("{}", &name.unwrap_or_default(), 1)
             }
             CaptureState::Finished => match s.bounds() {
-                Some(b) => format!("Finished · {}", crate::core::format::time_short(b.duration_secs())),
-                None => "Finished".to_owned(),
+                Some(b) => crate::l10n::tr("Finished · {}").replacen(
+                    "{}",
+                    &crate::core::format::time_short(b.duration_secs()),
+                    1,
+                ),
+                None => crate::l10n::tr("Finished").to_owned(),
             },
-            _ => "Empty".to_owned(),
+            _ => crate::l10n::tr("Empty").to_owned(),
         };
         format!("{} · {state}", self.device_label(&s.device))
     }

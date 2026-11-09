@@ -18,7 +18,7 @@ impl LaApp {
     /// `Ok` when `id` can run now, else why not (the menus' tooltip).
     pub(crate) fn command_available(&self, id: &str) -> Result<(), &'static str> {
         let s = self.session.as_ref();
-        let need = |ok: bool, why: &'static str| if ok { Ok(()) } else { Err(why) };
+        let need = |ok: bool, why: &'static str| if ok { Ok(()) } else { Err(crate::l10n::tr(why)) };
         let session = || need(s.is_some(), "Open a device or a capture first.");
         let data = || need(s.is_some_and(|s| s.has_data()), "There is no data yet.");
         let finished =
@@ -70,21 +70,23 @@ impl LaApp {
                 )
             }
             id if id.starts_with("nav.") || id.starts_with("analog.") => data(),
-            "session.new" => self.create_blocked().map_or(Ok(()), Err),
+            "session.new" => self.create_blocked().map_or(Ok(()), |why| Err(crate::l10n::tr(why))),
             "session.close" => {
                 session()?;
-                self.active_id().and_then(|id| self.close_refused(id)).map_or(Ok(()), Err)
+                self.active_id().and_then(|id| self.close_refused(id)).map_or(Ok(()), |why| Err(crate::l10n::tr(why)))
             }
             "session.show" | "session.rename" => session(),
             "session.next" | "session.prev" => {
                 need(self.session_count() > 1, "There is only one session.")?;
-                self.switch_blocked().map_or(Ok(()), Err)
+                self.switch_blocked().map_or(Ok(()), |why| Err(crate::l10n::tr(why)))
             }
             "session.goto" => {
                 need(self.session_count() > 1, "There is only one session.")?;
-                self.switch_blocked().map_or(Ok(()), Err)
+                self.switch_blocked().map_or(Ok(()), |why| Err(crate::l10n::tr(why)))
             }
-            id if id.starts_with("session.goto_") => self.switch_blocked().map_or(Ok(()), Err),
+            id if id.starts_with("session.goto_") => {
+                self.switch_blocked().map_or(Ok(()), |why| Err(crate::l10n::tr(why)))
+            }
             "session.close_others" => need(self.session_count() > 1, "There are no other sessions."),
             "marker.add" | "marker.add_pair" | "range.add" | "range.pulse" => data(),
             "analyzer.add" => {
@@ -133,29 +135,32 @@ impl LaApp {
 
     /// The label with the command's state, e.g. "Theme: Dark".
     pub(crate) fn command_label(&self, c: &Command) -> String {
+        let tr = crate::l10n::tr;
+        let one = |template: &'static str, v: &str| tr(template).replacen("{}", v, 1);
         match c.id {
             "capture.toggle" => {
                 let busy = self.session.as_ref().is_some_and(|s| s.state.is_busy());
-                (if busy { "Stop Recording" } else { "Start Recording" }).to_owned()
+                tr(if busy { "Stop Recording" } else { "Start Recording" }).to_owned()
             }
-            "view.theme" => format!("Theme: {}", self.settings.appearance.theme.label()),
-            "view.trace_width" => format!("Trace Width: {}", self.settings.waveform.trace_width.label()),
+            "view.theme" => one("Theme: {}", self.settings.appearance.theme.label()),
+            "view.trace_width" => one("Trace Width: {}", self.settings.waveform.trace_width.label()),
             "analyzer.pause" => {
-                format!("Pause Analyzers: {}", if self.ui.analyzers_paused { "on" } else { "off" })
+                let on = if self.ui.analyzers_paused { tr("on") } else { tr("off") };
+                one("Pause Analyzers: {}", on)
             }
             "capture.repeat" => {
-                format!("Repeat Capture: {}", if self.command_checked(c.id) == Some(true) { "on" } else { "off" })
+                let on = if self.command_checked(c.id) == Some(true) { tr("on") } else { tr("off") };
+                one("Repeat Capture: {}", on)
             }
             "view.wire_status" => {
-                format!("Wire Status: {}", if self.command_checked(c.id) == Some(true) { "on" } else { "off" })
+                let on = if self.command_checked(c.id) == Some(true) { tr("on") } else { tr("off") };
+                one("Wire Status: {}", on)
             }
             "view.traces_color" => {
-                format!(
-                    "Toggle Traces Color: {}",
-                    if !self.settings.waveform.color_waveforms { "neutral" } else { "by channel" }
-                )
+                let state = if !self.settings.waveform.color_waveforms { tr("neutral") } else { tr("by channel") };
+                one("Toggle Traces Color: {}", state)
             }
-            _ => c.label.to_owned(),
+            _ => tr(c.label).to_owned(),
         }
     }
 

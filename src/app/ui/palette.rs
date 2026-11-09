@@ -110,10 +110,10 @@ impl LaApp {
                 .collect();
             let mut v = Vec::new();
             if !recent.is_empty() {
-                v.push(Entry::Header("Recent"));
+                v.push(Entry::Header(crate::l10n::tr("Recent")));
                 v.extend(recent.iter().map(|c| entry(c)));
             }
-            v.push(Entry::Header("All commands"));
+            v.push(Entry::Header(crate::l10n::tr("All commands")));
             v.extend(cmds.iter().filter(|c| !recent.iter().any(|r| r.id == c.id)).map(|c| entry(c)));
             v.truncate(MAX_RESULTS);
             return v;
@@ -201,13 +201,13 @@ impl LaApp {
                         ui.add_space(8.0);
                         let before = p.query.clone();
                         let edit = egui::TextEdit::singleline(&mut p.query)
-                            .hint_text("Search commands…")
+                            .hint_text(crate::l10n::tr("Search commands…"))
                             .frame(egui::Frame::NONE)
                             .font(Text::Prose.font_id())
                             .desired_width(ui.available_width() - 16.0)
                             .id(Id::unique("palette_query"));
                         let r = ui.add(edit);
-                        super::label_text_edit(&r, &p.query, "Search commands");
+                        super::label_text_edit(&r, &p.query, crate::l10n::tr("Search commands"));
                         if !p.opened || !r.has_focus() {
                             r.request_focus();
                             p.opened = true;
@@ -224,7 +224,7 @@ impl LaApp {
                     // Breadcrumb.
                     if let Some(parent) = p.parent.and_then(commands::get) {
                         let (rect, resp) = ui.allocate_exact_size(vec2(WIDTH, HEADER_H), Sense::click());
-                        let text = format!("‹ {}", parent.label);
+                        let text = format!("‹ {}", crate::l10n::tr(parent.label));
                         resp.widget_info(|| WidgetInfo::labeled(Role::Button, true, &text));
                         let c = if resp.hovered() { Token::Ink1 } else { Token::Ink3 };
                         ui.painter().text(
@@ -314,11 +314,11 @@ impl LaApp {
             }
             Entry::Nothing => {
                 let (rect, resp) = ui.allocate_exact_size(vec2(WIDTH, ROW_H), Sense::hover());
-                resp.widget_info(|| WidgetInfo::labeled(Role::Label, false, "No matching commands"));
+                resp.widget_info(|| WidgetInfo::labeled(Role::Label, false, crate::l10n::tr("No matching commands")));
                 ui.painter().text(
                     pos2(rect.left() + 16.0, rect.center().y),
                     Align2::LEFT_CENTER,
-                    "No matching commands",
+                    crate::l10n::tr("No matching commands"),
                     Text::Prose.font_id(),
                     theme.color(Token::Ink4),
                 );

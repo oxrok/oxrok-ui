@@ -152,11 +152,12 @@ impl ThemePref {
     pub const ALL: [ThemePref; 3] = [ThemePref::Light, ThemePref::Dark, ThemePref::System];
 
     pub fn label(self) -> &'static str {
-        match self {
+        let en = match self {
             ThemePref::Light => "Light",
             ThemePref::Dark => "Dark",
             ThemePref::System => "System",
-        }
+        };
+        crate::l10n::tr(en)
     }
 
     /// The theme to draw, given the OS appearance (Dark when unknown).
@@ -323,6 +324,8 @@ impl Default for MeasurementMetrics {
 #[serde(default)]
 pub struct AppSettings {
     pub schema_version: u32,
+    /// The UI language (English by default).
+    pub language: crate::l10n::Language,
     pub inspector: InspectorSettings,
     pub label_width: f32,
     /// The zoom tool's current mode.
@@ -398,6 +401,7 @@ impl Default for AppSettings {
     fn default() -> Self {
         Self {
             schema_version: SCHEMA_VERSION,
+            language: crate::l10n::Language::default(),
             inspector: InspectorSettings::default(),
             label_width: DEFAULT_LABEL_WIDTH,
             marquee_mode: MarqueeMode::X,

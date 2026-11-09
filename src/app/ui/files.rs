@@ -7,6 +7,7 @@ use crate::app::file::{self, LoadedCapture, SessionMeta};
 use crate::app::worker::SessionId;
 use crate::app::{AppEvent, LaApp};
 use crate::core::capture::CaptureState;
+use crate::l10n::tr;
 use crate::ui::Token;
 use crate::ui::theme::ThemeExt;
 use crate::ui::toast::{Toast, ToastKind};
@@ -194,7 +195,7 @@ impl LaApp {
         };
         let Some(s) = self.session_by_id(id) else { return };
         if s.state != CaptureState::Finished || !s.has_data() {
-            self.toast(Toast::new(ToastKind::Info, "Record a capture before saving.").id("save-nothing"));
+            self.toast(Toast::new(ToastKind::Info, tr("Record a capture before saving.")).id("save-nothing"));
             return;
         }
         let Some(meta) = SessionMeta::of(s, &typed) else { return };
@@ -218,9 +219,9 @@ impl LaApp {
                 let path = match target {
                     Some(p) => p,
                     None => {
-                        let filters = [("capture (*.oxrok)".to_owned(), vec![file::EXTENSION.to_owned()])];
+                        let filters = [(tr("capture (*.oxrok)").to_owned(), vec![file::EXTENSION.to_owned()])];
                         let picked = dialogs.save_file(
-                            "Choose the save location for the capture",
+                            tr("Choose the save location for the capture"),
                             start.as_deref(),
                             &name,
                             &filters,
@@ -240,7 +241,7 @@ impl LaApp {
                         }
                     }
                 };
-                let heading = format!("Saving {}…", file_name(&path));
+                let heading = tr("Saving {}…").replacen("{}", &file_name(&path), 1);
                 let result = if full {
                     file::save(&path, &meta, &capture, &mut |f| {
                         send(FileEvent::Progress { toast: SAVE_TOAST, heading: heading.clone(), fraction: f });
@@ -269,7 +270,7 @@ impl LaApp {
             // The user cancelled the save dialog: nothing happens, and
             // nothing that waited on the save either.
             Err(e) if e.is_empty() => {}
-            Err(e) => self.toast(Toast::new(ToastKind::Error, e).heading("Could not save the capture")),
+            Err(e) => self.toast(Toast::new(ToastKind::Error, e).heading(tr("Could not save the capture"))),
             Ok(path) => {
                 let rename = self.settings.files.rename_on_save;
                 if let Some(s) = self.session_by_id_mut(id) {
@@ -290,7 +291,7 @@ impl LaApp {
                 self.settings_dirty_at.get_or_insert(self.clock.now());
                 self.ui.reveal.insert(SAVED_TOAST.into(), path.clone());
                 self.toast(
-                    Toast::new(ToastKind::Success, format!("Saved {}", file_name(&path)))
+                    Toast::new(ToastKind::Success, tr("Saved {}").replacen("{}", &file_name(&path), 1))
                         .id(SAVED_TOAST)
                         .action("Show in Folder"),
                 );
@@ -306,7 +307,7 @@ impl LaApp {
     /// `Ctrl/Cmd+O` and the start screen's button.
     pub(crate) fn open_capture(&mut self) {
         if self.session.as_ref().is_some_and(|s| s.state.is_busy()) {
-            self.toast(Toast::new(ToastKind::Info, "Stop recording before opening a capture."));
+            self.toast(Toast::new(ToastKind::Info, tr("Stop recording before opening a capture.")));
             return;
         }
         self.pick_files_to_open();
@@ -326,17 +327,17 @@ impl LaApp {
         all.sort();
         all.dedup();
         let mut v = vec![
-            ("All supported files".to_owned(), all),
-            ("capture (*.oxrok)".to_owned(), vec![file::EXTENSION.into()]),
+            (tr("All supported files").to_owned(), all),
+            (tr("capture (*.oxrok)").to_owned(), vec![file::EXTENSION.into()]),
         ];
         if sigrok {
-            v.push(("sigrok session (*.sr)".into(), vec!["sr".into()]));
+            v.push((tr("sigrok session (*.sr)").into(), vec!["sr".into()]));
         }
         for f in self.input_formats.iter().filter(|f| !f.extensions.is_empty()) {
             let globs: Vec<String> = f.extensions.iter().map(|e| format!("*.{e}")).collect();
             v.push((format!("{} ({})", f.description, globs.join(", ")), f.extensions.clone()));
         }
-        v.push(("All files".into(), vec!["*".into()]));
+        v.push((tr("All files").into(), vec!["*".into()]));
         v
     }
 
@@ -349,7 +350,7 @@ impl LaApp {
         std::thread::Builder::new()
             .name("open-dialog".into())
             .spawn(move || {
-                let files = dialogs.open_files("Pick a capture file to open", start.as_deref(), &filters);
+                let files = dialogs.open_files(tr("Pick a capture file to open"), start.as_deref(), &filters);
                 let _ = tx.send(AppEvent::File(FileEvent::Picked(files)));
                 ctx.request_repaint();
             })
@@ -363,7 +364,7 @@ impl LaApp {
             return;
         }
         if self.session.as_ref().is_some_and(|s| s.state.is_busy()) {
-            self.toast(Toast::new(ToastKind::Info, "Stop recording before opening a capture."));
+            self.toast(Toast::new(ToastKind::Info, tr("Stop recording before opening a capture.")));
             return;
         }
         self.load_files(paths);
@@ -399,9 +400,12 @@ impl LaApp {
         let (ok, bad): (Vec<_>, Vec<_>) = paths.into_iter().partition(|p| self.can_open(p));
         for p in bad {
             self.toast(
-                Toast::new(ToastKind::Warning, format!("{} isn't a supported capture file", file_name(&p)))
-                    .id(format!("unsupported-{}", p.display()))
-                    .action("Supported formats…"),
+                Toast::new(
+                    ToastKind::Warning,
+                    tr("{} isn't a supported capture file").replacen("{}", &file_name(&p), 1),
+                )
+                .id(format!("unsupported-{}", p.display()))
+                .action("Supported formats…"),
             );
         }
         // Queued and loaded one after another.
@@ -436,7 +440,7 @@ impl LaApp {
         std::thread::Builder::new()
             .name("load".into())
             .spawn(move || {
-                let heading = format!("Reading {}…", file_name(&path));
+                let heading = tr("Reading {}…").replacen("{}", &file_name(&path), 1);
                 let r = file::load(&path, &mut |f| {
                     let _ = tx.send(AppEvent::File(FileEvent::Progress {
                         toast: LOAD_TOAST,
@@ -459,7 +463,7 @@ impl LaApp {
         let l = match r {
             Ok(l) => l,
             Err(e) => {
-                self.toast(Toast::new(ToastKind::Error, e).heading("Could not open the capture"));
+                self.toast(Toast::new(ToastKind::Error, e).heading(tr("Could not open the capture")));
                 return self.open_next_queued();
             }
         };
@@ -482,7 +486,7 @@ impl LaApp {
         }
         self.settings.add_recent_file(&path);
         self.settings_dirty_at.get_or_insert(self.clock.now());
-        self.toast(Toast::new(ToastKind::Success, format!("Opened {}", file_name(&path))).id("opened"));
+        self.toast(Toast::new(ToastKind::Success, tr("Opened {}").replacen("{}", &file_name(&path), 1)).id("opened"));
         self.open_next_queued();
     }
 
@@ -503,7 +507,7 @@ impl LaApp {
         let text = if s.is_import() {
             super::graph::import_cannot_record(s)
         } else {
-            format!("Connect a {} to record with these settings.", s.device.display_name())
+            tr("Connect a {} to record with these settings.").replacen("{}", &s.device.display_name(), 1)
         };
         self.toast(Toast::new(ToastKind::Info, text).id("no-matching-device"));
     }
@@ -587,9 +591,12 @@ impl LaApp {
             None if !candidates.is_empty() => self.open_import_dialog(path, &candidates[0], true),
             None => {
                 self.toast(
-                    Toast::new(ToastKind::Warning, format!("{} isn't a supported capture file", file_name(&path)))
-                        .id(format!("unsupported-{}", path.display()))
-                        .action("Supported formats…"),
+                    Toast::new(
+                        ToastKind::Warning,
+                        tr("{} isn't a supported capture file").replacen("{}", &file_name(&path), 1),
+                    )
+                    .id(format!("unsupported-{}", path.display()))
+                    .action("Supported formats…"),
                 );
                 self.open_next_queued();
             }
@@ -614,7 +621,7 @@ impl LaApp {
             .spawn(move || {
                 let capture = crate::app::capture::SharedCapture::default();
                 let sink = Box::new(file::ImportSink { data: capture.clone() });
-                let heading = format!("Reading {}…", file_name(&path));
+                let heading = tr("Reading {}…").replacen("{}", &file_name(&path), 1);
                 let (ptx, pctx) = (tx.clone(), ctx.clone());
                 let progress = Box::new(move |f: f32| {
                     let _ = ptx.send(AppEvent::File(FileEvent::Progress {
@@ -635,7 +642,7 @@ impl LaApp {
                         match failed {
                             Some(m) => Err(format!("{}: {m}", file_name(&path))),
                             None if capture.read().sample_range().is_none() => {
-                                Err(format!("{}: the file holds no samples", file_name(&path)))
+                                Err(tr("{}: the file holds no samples").replacen("{}", &file_name(&path), 1))
                             }
                             None => Ok(Imported { path: path.clone(), info, capture, module }),
                         }
@@ -652,7 +659,7 @@ impl LaApp {
         let im = match r {
             Ok(im) => im,
             Err(e) => {
-                self.toast(Toast::new(ToastKind::Error, e).heading("Could not open the capture"));
+                self.toast(Toast::new(ToastKind::Error, e).heading(tr("Could not open the capture")));
                 return self.open_next_queued();
             }
         };
@@ -667,7 +674,8 @@ impl LaApp {
         }
         self.settings.add_recent_file(&im.path);
         self.settings_dirty_at.get_or_insert(self.clock.now());
-        let mut t = Toast::new(ToastKind::Success, format!("Opened {}", file_name(&im.path))).id("opened");
+        let mut t =
+            Toast::new(ToastKind::Success, tr("Opened {}").replacen("{}", &file_name(&im.path), 1)).id("opened");
         // Read with defaults → offer to change them.
         if let Some((module, true)) = &im.module
             && self.input_formats.iter().any(|f| f.id == *module && !f.options.is_empty())
@@ -714,7 +722,7 @@ impl LaApp {
             "Supported formats…" => {
                 self.toasts.dismiss(id);
                 let text = self.supported_formats_text();
-                self.toast(Toast::new(ToastKind::Info, text).heading("Supported formats").id("formats"));
+                self.toast(Toast::new(ToastKind::Info, text).heading(tr("Supported formats")).id("formats"));
                 true
             }
             "Change Import Options…" => {
@@ -772,7 +780,7 @@ impl LaApp {
             Prompt::SaveCapture { session, .. } => self.session_by_id(*session),
             _ => None,
         };
-        let save_body = asked.map(|s| format!("{} has a capture that hasn't been saved.", s.name));
+        let save_body = asked.map(|s| tr("{} has a capture that hasn't been saved.").replacen("{}", &s.name, 1));
         let quit_names: std::collections::HashMap<SessionId, String> = self
             .sessions()
             .iter()
@@ -788,16 +796,16 @@ impl LaApp {
         let mut answer: Option<&'static str> = None;
         let mut next = prompt.clone();
         let (title, width) = match &prompt {
-            Prompt::SaveCapture { .. } => ("Save Capture?", 460.0),
-            Prompt::Quit { .. } => ("Save Captures?", 460.0),
-            Prompt::QuitWhileSaving => ("Saving the capture…", 460.0),
-            Prompt::QuitWhileExporting => ("Export in progress!", 460.0),
-            Prompt::ReplaceCapture { .. } => ("Replace Capture?", 460.0),
+            Prompt::SaveCapture { .. } => (tr("Save Capture?"), 460.0),
+            Prompt::Quit { .. } => (tr("Save Captures?"), 460.0),
+            Prompt::QuitWhileSaving => (tr("Saving the capture…"), 460.0),
+            Prompt::QuitWhileExporting => (tr("Export in progress!"), 460.0),
+            Prompt::ReplaceCapture { .. } => (tr("Replace Capture?"), 460.0),
             Prompt::RecordOnOpened { .. } => ("", 480.0),
         };
         let opened = self.session.as_ref().and_then(|s| s.opened_from.clone());
         let opened_name = opened.as_deref().map(file_name).unwrap_or_default();
-        let record_title = format!("Record on {opened_name}?");
+        let record_title = tr("Record on {}?").replacen("{}", &opened_name, 1);
         let title = if matches!(prompt, Prompt::RecordOnOpened { .. }) { record_title.as_str() } else { title };
         let overwrites = opened.as_deref().is_some_and(|p| p.extension().is_some_and(|e| e == file::EXTENSION));
         let resp = Modal::new(Id::unique("unsaved_prompt")).frame(modal_frame(ctx).inner_margin(Margin::ZERO)).show(
@@ -817,9 +825,9 @@ impl LaApp {
                         body(
                             ui,
                             &if n == 1 {
-                                "1 capture hasn't been saved:".to_owned()
+                                tr("1 capture hasn't been saved:").to_owned()
                             } else {
-                                format!("{n} captures haven't been saved:")
+                                tr("{} captures haven't been saved:").replacen("{}", &n.to_string(), 1)
                             },
                         );
                         ui.add_space(8.0);
@@ -828,25 +836,27 @@ impl LaApp {
                             ui.add(crate::ui::widgets::Checkbox::new(on, &label));
                         }
                     }
-                    Prompt::QuitWhileSaving => body(ui, "Quitting now will corrupt the in-progress save. Quit anyway?"),
+                    Prompt::QuitWhileSaving => {
+                        body(ui, tr("Quitting now will corrupt the in-progress save. Quit anyway?"))
+                    }
                     Prompt::QuitWhileExporting => {
-                        body(ui, "Quitting now will corrupt the in-progress export. Quit anyway?")
+                        body(ui, tr("Quitting now will corrupt the in-progress export. Quit anyway?"))
                     }
                     Prompt::ReplaceCapture { dont_ask } => {
-                        body(ui, "The current capture hasn't been saved. Starting a new recording discards it.");
+                        body(ui, tr("The current capture hasn't been saved. Starting a new recording discards it."));
                         ui.add_space(12.0);
-                        ui.add(crate::ui::widgets::Checkbox::new(dont_ask, "Don't ask again"));
+                        ui.add(crate::ui::widgets::Checkbox::new(dont_ask, tr("Don't ask again")));
                     }
                     Prompt::RecordOnOpened { remember } => {
-                        body(ui, &format!("This session shows the data from {opened_name}."));
+                        body(ui, &tr("This session shows the data from {}.").replacen("{}", &opened_name, 1));
                         let then = if overwrites {
-                            format!("With Replace Data, saving afterwards overwrites {opened_name}.")
+                            tr("With Replace Data, saving afterwards overwrites {}.").replacen("{}", &opened_name, 1)
                         } else {
-                            "With Replace Data, saving afterwards asks where to save.".to_owned()
+                            tr("With Replace Data, saving afterwards asks where to save.").to_owned()
                         };
                         body(ui, &then);
                         ui.add_space(12.0);
-                        ui.add(crate::ui::widgets::Checkbox::new(remember, "Remember my choice"));
+                        ui.add(crate::ui::widgets::Checkbox::new(remember, tr("Remember my choice")));
                     }
                 });
                 ui.separator();
@@ -867,19 +877,20 @@ impl LaApp {
                                 &[("Cancel", false), ("New Session", false), ("Replace Data", true)]
                             }
                         };
-                        if ui.add(Button::secondary(buttons[0].0)).clicked() {
+                        if ui.add(Button::secondary(tr(buttons[0].0))).clicked() {
                             answer = Some(buttons[0].0);
                         }
                         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                             for (label, primary) in buttons[1..].iter().rev() {
+                                let shown = tr(label);
                                 let b = if *primary {
                                     if *label == "Replace" {
-                                        Button::destructive(label)
+                                        Button::destructive(shown)
                                     } else {
-                                        Button::primary(label)
+                                        Button::primary(shown)
                                     }
                                 } else {
-                                    Button::secondary(label)
+                                    Button::secondary(shown)
                                 };
                                 if ui.add(b).clicked() {
                                     answer = Some(label);
@@ -965,7 +976,7 @@ impl LaApp {
         let p = ui.painter_at(rect);
         p.rect_filled(rect, 0.0, theme.color(Token::Card));
         p.line_segment([rect.left_bottom(), rect.right_bottom()], egui::Stroke::new(1.0, theme.color(Token::Seam)));
-        let text = format!("Opened from {}", file_name(&path));
+        let text = tr("Opened from {}").replacen("{}", &file_name(&path), 1);
         let info = ui.interact(rect, ui.make_persistent_id("file-banner"), Sense::hover());
         info.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Label, true, &text));
 
@@ -973,9 +984,9 @@ impl LaApp {
         // the file name gets what is left. Short labels when it's tight.
         use crate::app::settings::RecordOnOpened as R;
         let choices = [
-            (R::Ask, "I will decide later", "Decide later"),
-            (R::Replace, "Will record here", "Record here"),
-            (R::NewSession, "New capture with these settings", "New capture"),
+            (R::Ask, tr("I will decide later"), tr("Decide later")),
+            (R::Replace, tr("Will record here"), tr("Record here")),
+            (R::NewSession, tr("New capture with these settings"), tr("New capture")),
         ];
         let font = Text::CaptionMed.font_id();
         let width_of =
@@ -989,8 +1000,8 @@ impl LaApp {
                 .layout(egui::Layout::right_to_left(egui::Align::Center)),
         );
         // Closes into a toolbar icon, for this session only.
-        let hide = super::ranges::icon_button(&mut child, "Hide banner", crate::ui::icons::chevron_up)
-            .on_hover_text("Hide banner")
+        let hide = super::ranges::icon_button(&mut child, tr("Hide banner"), crate::ui::icons::chevron_up)
+            .on_hover_text(tr("Hide banner"))
             .clicked();
         child.add_space(8.0);
         let current =
@@ -1008,7 +1019,7 @@ impl LaApp {
                 child.add_space(4.0);
             }
             child.add_space(4.0);
-            child.label(egui::RichText::new("Record:").color(theme.color(Token::Ink4)));
+            child.label(egui::RichText::new(tr("Record:")).color(theme.color(Token::Ink4)));
         }
         let right = child.min_rect().left();
         // A choice closes the banner for this session (the toolbar icon
@@ -1045,13 +1056,15 @@ impl LaApp {
             Rect::from_min_size(l.toolbar.left_top() + vec2(super::graph::CAPTURE_ITEM_W + 8.0, 3.0), vec2(24.0, 24.0));
         let mut child = ui.new_child(egui::UiBuilder::new().max_rect(r));
         let choice = match self.session.as_ref().and_then(|s| s.record_choice) {
-            Some(crate::app::settings::RecordOnOpened::NewSession) => "Record: new capture with these settings. ",
-            Some(crate::app::settings::RecordOnOpened::Replace) => "Record: will record here. ",
-            Some(crate::app::settings::RecordOnOpened::Ask) => "Record: you will decide then. ",
+            Some(crate::app::settings::RecordOnOpened::NewSession) => tr("Record: new capture with these settings. "),
+            Some(crate::app::settings::RecordOnOpened::Replace) => tr("Record: will record here. "),
+            Some(crate::app::settings::RecordOnOpened::Ask) => tr("Record: you will decide then. "),
             None => "",
         };
-        let tip = format!("Opened from {}. {choice}Click to show the banner.", file_name(&path));
-        if super::ranges::icon_button(&mut child, "Opened from a file", crate::ui::icons::file)
+        let tip = tr("Opened from {}. {}Click to show the banner.")
+            .replacen("{}", &file_name(&path), 1)
+            .replacen("{}", choice, 1);
+        if super::ranges::icon_button(&mut child, tr("Opened from a file"), crate::ui::icons::file)
             .on_hover_text(tip)
             .clicked()
             && let Some(s) = self.session.as_mut()
@@ -1064,7 +1077,7 @@ impl LaApp {
     pub(crate) fn supported_formats_text(&self) -> String {
         let mut v = vec![".oxrok".to_owned()];
         if !self.input_formats.is_empty() {
-            v.push("sigrok session (.sr)".into());
+            v.push(tr("sigrok session (.sr)").into());
         }
         for f in &self.input_formats {
             let exts: Vec<String> = f.extensions.iter().map(|e| format!(".{e}")).collect();
@@ -1101,10 +1114,10 @@ impl LaApp {
         }
         let ok: Vec<&PathBuf> = hovered.iter().filter(|p| self.can_open(p)).collect();
         let text = match (ok.len(), hovered.len()) {
-            (1, _) => format!("Drop to open {}", file_name(ok[0])),
-            (0, 0) => "Drop capture files to open".to_owned(),
-            (0, _) => format!("{} can't be opened", file_name(&hovered[0])),
-            (k, _) => format!("Drop to open {k} captures (each in a new session)"),
+            (1, _) => tr("Drop to open {}").replacen("{}", &file_name(ok[0]), 1),
+            (0, 0) => tr("Drop capture files to open").to_owned(),
+            (0, _) => tr("{} can't be opened").replacen("{}", &file_name(&hovered[0]), 1),
+            (k, _) => tr("Drop to open {} captures (each in a new session)").replacen("{}", &k.to_string(), 1),
         };
         let bad: Vec<String> = hovered.iter().filter(|p| !self.can_open(p)).map(|p| file_name(p)).collect();
         let theme = ctx.la_theme();
@@ -1127,7 +1140,7 @@ impl LaApp {
             p.text(
                 inner.center() + vec2(0.0, 28.0),
                 egui::Align2::CENTER_CENTER,
-                format!("{} can't be opened", bad.join(", ")),
+                tr("{} can't be opened").replacen("{}", &bad.join(", "), 1),
                 Text::Prose.font_id(),
                 theme.color(Token::Ink3),
             );

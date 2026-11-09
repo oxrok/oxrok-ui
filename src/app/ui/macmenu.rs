@@ -88,7 +88,7 @@ pub(crate) fn parse_id(id: &str) -> Option<Act> {
 
 impl LaApp {
     /// What the native menu shows now; it's rebuilt when this changes.
-    fn menu_signature(&self, model: &[(&'static str, Vec<Node>)]) -> String {
+    fn menu_signature(&self, model: &[(&'static str, &'static str, Vec<Node>)]) -> String {
         fn walk(app: &LaApp, nodes: &[Node], out: &mut String) {
             for n in nodes {
                 out.push_str(&format!("{n:?}"));
@@ -105,7 +105,7 @@ impl LaApp {
             }
         }
         let mut s = String::new();
-        for (title, nodes) in model {
+        for (_id, title, nodes) in model {
             s.push_str(title);
             walk(self, nodes, &mut s);
         }
@@ -176,8 +176,14 @@ impl LaApp {
         }
         let menu = Menu::new();
         // The app menu.
-        let quit = MenuItem::with_id("sp:quit", format!("Quit {APP_NAME}"), true, "Cmd+KeyQ".parse().ok());
-        let settings = MenuItem::with_id("cmd:settings.open", "Settings…", true, accelerator("settings.open"));
+        let quit = MenuItem::with_id(
+            "sp:quit",
+            crate::l10n::tr("Quit {}").replacen("{}", APP_NAME, 1),
+            true,
+            "Cmd+KeyQ".parse().ok(),
+        );
+        let settings =
+            MenuItem::with_id("cmd:settings.open", crate::l10n::tr("Settings…"), true, accelerator("settings.open"));
         let app = Submenu::with_items(
             APP_NAME,
             true,
@@ -197,12 +203,12 @@ impl LaApp {
             let _ = menu.append(&app);
         }
         let window = Submenu::with_items(
-            "Window",
+            crate::l10n::tr("Window"),
             true,
-            &[&PredefinedMenuItem::minimize(None), &PredefinedMenuItem::maximize(Some("Zoom"))],
+            &[&PredefinedMenuItem::minimize(None), &PredefinedMenuItem::maximize(Some(crate::l10n::tr("Zoom")))],
         );
-        for (title, nodes) in &model {
-            if *title == "Help"
+        for (id, title, nodes) in &model {
+            if *id == "help"
                 && let Ok(w) = &window
             {
                 let _ = menu.append(w);
@@ -211,7 +217,7 @@ impl LaApp {
             let sub = Submenu::new(*title, true);
             self.append_nodes(&sub, nodes);
             let _ = menu.append(&sub);
-            if *title == "Help" {
+            if *id == "help" {
                 sub.set_as_help_menu_for_nsapp();
             }
         }

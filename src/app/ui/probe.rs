@@ -7,6 +7,7 @@ use crate::app::profiles::ProfileSource;
 use crate::app::session::{Row, Session};
 use crate::core::ChannelKind;
 use crate::core::probe::{self, Color, Group, MIN_CONTRAST, Match, ProbeChannel, ProbeProfile};
+use crate::l10n::tr;
 use crate::ui::Token;
 use crate::ui::colors::channel_color;
 use crate::ui::theme::{Theme, ThemeExt};
@@ -158,17 +159,17 @@ impl Target {
 
     fn describe(self, p: &ProbeProfile) -> String {
         match self {
-            Target::Wire(c) => format!("{} wire", p.channels[c].name),
-            Target::Marker(c) => format!("{} marker", p.channels[c].name),
-            Target::GroupMarker(g) => format!("{} marker", p.groups[g].name),
+            Target::Wire(c) => tr("{} wire").replacen("{}", &p.channels[c].name, 1),
+            Target::Marker(c) => tr("{} marker").replacen("{}", &p.channels[c].name, 1),
+            Target::GroupMarker(g) => tr("{} marker").replacen("{}", &p.groups[g].name, 1),
         }
     }
 
     fn none_label(self) -> &'static str {
         match self {
-            Target::Wire(_) => "Default",
-            Target::Marker(_) => "Group default",
-            Target::GroupMarker(_) => "No marker",
+            Target::Wire(_) => tr("Default"),
+            Target::Marker(_) => tr("Group default"),
+            Target::GroupMarker(_) => tr("No marker"),
         }
     }
 }
@@ -217,24 +218,27 @@ impl LaApp {
         let resp = Modal::new(Id::unique("probe_editor")).frame(modal_frame(ctx)).show(ctx, |ui| {
             ui.set_width(620.0);
             let c = |t| theme.color(t);
-            ui.label(egui::RichText::new("Probe Colors").text_style(Text::Display.style()).color(c(Token::Ink1)));
+            ui.label(egui::RichText::new(tr("Probe Colors")).text_style(Text::Display.style()).color(c(Token::Ink1)));
             ui.add_space(4.0);
             let m = &ed.draft.matcher;
             let matched = [
-                Some(format!("driver {}", m.driver)),
-                m.vendor.as_ref().map(|v| format!("vendor {v}")),
-                m.model.as_ref().map(|v| format!("model {v}")),
+                Some(tr("driver {}").replacen("{}", &m.driver, 1)),
+                m.vendor.as_ref().map(|v| tr("vendor {}").replacen("{}", v, 1)),
+                m.model.as_ref().map(|v| tr("model {}").replacen("{}", v, 1)),
             ]
             .into_iter()
             .flatten()
             .collect::<Vec<_>>()
             .join(", ");
-            ui.label(egui::RichText::new(format!("{device} · applies to {matched}")).color(c(Token::Ink3)));
+            ui.label(
+                egui::RichText::new(tr("{} · applies to {}").replacen("{}", &device, 1).replacen("{}", &matched, 1))
+                    .color(c(Token::Ink3)),
+            );
             ui.add_space(12.0);
             ui.horizontal(|ui| {
-                ui.label("Profile name");
+                ui.label(tr("Profile name"));
                 let r = ui.add(egui::TextEdit::singleline(&mut ed.draft.name).desired_width(300.0));
-                super::label_text_edit(&r, &ed.draft.name, "Profile name");
+                super::label_text_edit(&r, &ed.draft.name, tr("Profile name"));
             });
             ui.add_space(16.0);
             // The body scrolls so the modal fits small windows (min 500 pt)
@@ -253,8 +257,8 @@ impl LaApp {
             ui.horizontal(|ui| {
                 // *Reset to built-in* for a user copy, *Delete* for a user-only profile.
                 let delete = match ed.source {
-                    Some(ProfileSource::UserOverride) => Some("Reset to built-in"),
-                    Some(ProfileSource::User) => Some("Delete profile"),
+                    Some(ProfileSource::UserOverride) => Some(tr("Reset to built-in")),
+                    Some(ProfileSource::User) => Some(tr("Delete profile")),
                     _ => None,
                 };
                 if let Some(label) = delete
@@ -263,10 +267,10 @@ impl LaApp {
                     action = Some(EditorAction::DeleteUser);
                 }
                 ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                    if ui.add(Button::primary("Save")).clicked() {
+                    if ui.add(Button::primary(tr("Save"))).clicked() {
                         action = Some(EditorAction::Save);
                     }
-                    if ui.add(Button::secondary("Cancel")).clicked() {
+                    if ui.add(Button::secondary(tr("Cancel"))).clicked() {
                         action = Some(EditorAction::Cancel);
                     }
                 });
@@ -279,10 +283,10 @@ impl LaApp {
         let ed = self.ui.probe_editor.take().unwrap();
         let result = match action {
             EditorAction::Cancel => return,
-            EditorAction::Save => self.profiles.save(&ed.draft).map(|_| "Probe colors saved"),
+            EditorAction::Save => self.profiles.save(&ed.draft).map(|_| tr("Probe colors saved")),
             EditorAction::DeleteUser => self.profiles.delete_user(&ed.draft.matcher).map(|_| match ed.source {
-                Some(ProfileSource::UserOverride) => "Probe colors reset to the built-in profile",
-                _ => "Probe profile deleted",
+                Some(ProfileSource::UserOverride) => tr("Probe colors reset to the built-in profile"),
+                _ => tr("Probe profile deleted"),
             }),
         };
         match result {
@@ -295,7 +299,7 @@ impl LaApp {
                 self.toast(Toast::new(ToastKind::Success, msg));
             }
             Err(e) => {
-                self.toast(Toast::new(ToastKind::Error, e.to_string()).heading("Could not save the probe profile"));
+                self.toast(Toast::new(ToastKind::Error, e.to_string()).heading(tr("Could not save the probe profile")));
                 self.ui.probe_editor = Some(ed);
             }
         }
@@ -314,7 +318,7 @@ fn section(ui: &mut Ui, text: &str, theme: &Theme) {
 }
 
 fn groups_ui(ui: &mut Ui, ed: &mut ProbeEditor, theme: &Theme) {
-    section(ui, "Groups", theme);
+    section(ui, tr("Groups"), theme);
     let mut op: Option<(usize, i32)> = None; // (group, -1 up / 1 down / 0 delete)
     let p = &mut ed.draft;
     let n = p.groups.len();
@@ -333,11 +337,20 @@ fn groups_ui(ui: &mut Ui, ed: &mut ProbeEditor, theme: &Theme) {
                 ed.hex = p.groups[gi].marker.as_ref().map(Color::hex).unwrap_or_default();
             }
             let r = ui.add(egui::TextEdit::singleline(&mut p.groups[gi].name).desired_width(200.0));
-            super::label_text_edit(&r, &p.groups[gi].name, &format!("Group {} name", gi + 1));
+            super::label_text_edit(
+                &r,
+                &p.groups[gi].name,
+                &tr("Group {} name").replacen("{}", &(gi + 1).to_string(), 1),
+            );
             let count = p.channels.iter().filter(|c| c.group == gi).count();
-            ui.label(egui::RichText::new(format!("{count} channels")).color(theme.color(Token::Ink3)));
+            ui.label(
+                egui::RichText::new(tr("{} channels").replacen("{}", &count.to_string(), 1))
+                    .color(theme.color(Token::Ink3)),
+            );
             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                if n > 1 && ui.add(Button::tertiary("Delete")).on_hover_text("Its channels move to Other").clicked() {
+                if n > 1
+                    && ui.add(Button::tertiary(tr("Delete"))).on_hover_text(tr("Its channels move to Other")).clicked()
+                {
                     op = Some((gi, 0));
                 }
                 if gi + 1 < n && ui.add(Button::tertiary("↓")).clicked() {
@@ -349,7 +362,7 @@ fn groups_ui(ui: &mut Ui, ed: &mut ProbeEditor, theme: &Theme) {
             });
         });
     }
-    if ui.add(Button::tertiary("+ Add group")).clicked() {
+    if ui.add(Button::tertiary(tr("+ Add group"))).clicked() {
         p.groups.push(Group { name: format!("Group {}", p.groups.len() + 1), marker: None });
     }
     if op.is_some() {
@@ -400,13 +413,13 @@ fn sort_channels(p: &mut ProbeProfile) {
 }
 
 fn channels_ui(ui: &mut Ui, ed: &mut ProbeEditor, theme: &Theme) {
-    section(ui, "Channels", theme);
+    section(ui, tr("Channels"), theme);
     let p = &mut ed.draft;
     let group_names: Vec<String> = p.groups.iter().map(|g| g.name.clone()).collect();
     let mut moved = false;
     ui.scope(|ui| {
         egui::Grid::new("probe_channels").num_columns(5).spacing([12.0, 6.0]).show(ui, |ui| {
-            for h in ["Channel", "Group", "Wire", "Marker", "Label"] {
+            for h in [tr("Channel"), tr("Group"), tr("Wire"), tr("Marker"), tr("Label")] {
                 ui.label(egui::RichText::new(h).color(theme.color(Token::Ink3)));
             }
             ui.end_row();
@@ -422,7 +435,7 @@ fn channels_ui(ui: &mut Ui, ed: &mut ProbeEditor, theme: &Theme) {
                             ui.selectable_value(&mut g, gi, gname);
                         }
                     });
-                let group_label = format!("{name} group");
+                let group_label = tr("{} group").replacen("{}", &name, 1);
                 combo.response.widget_info(|| WidgetInfo::labeled(Role::ComboBox, true, &group_label));
                 if g != p.channels[ci].group {
                     p.channels[ci].group = g;
@@ -441,7 +454,7 @@ fn channels_ui(ui: &mut Ui, ed: &mut ProbeEditor, theme: &Theme) {
                 }
                 let mut label = p.channels[ci].label.clone().unwrap_or_default();
                 let r = ui.add(egui::TextEdit::singleline(&mut label).desired_width(110.0).hint_text(&name));
-                super::label_text_edit(&r, &label, &format!("{name} label"));
+                super::label_text_edit(&r, &label, &tr("{} label").replacen("{}", &name, 1));
                 if r.changed() {
                     p.channels[ci].label = Some(label).filter(|l| !l.trim().is_empty());
                 }
@@ -504,15 +517,18 @@ fn picker_ui(ui: &mut Ui, ed: &mut ProbeEditor, theme: &Theme) {
             ui.set_min_height(HEIGHT);
             let Some(t) = ed.picking else {
                 ui.label(
-                    egui::RichText::new("Select a wire or marker above to change its color.")
+                    egui::RichText::new(tr("Select a wire or marker above to change its color."))
                         .color(theme.color(Token::Ink3)),
                 );
                 return;
             };
             ui.horizontal(|ui| {
-                ui.label(egui::RichText::new(format!("Color for {}", t.describe(p))).text_style(Text::Lead.style()));
+                ui.label(
+                    egui::RichText::new(tr("Color for {}").replacen("{}", &t.describe(p), 1))
+                        .text_style(Text::Lead.style()),
+                );
                 ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                    if ui.add(Button::tertiary("Done")).clicked() {
+                    if ui.add(Button::tertiary(tr("Done"))).clicked() {
                         ed.picking = None;
                     }
                 });
@@ -549,9 +565,9 @@ fn picker_ui(ui: &mut Ui, ed: &mut ProbeEditor, theme: &Theme) {
             ui.add_space(6.0);
             ui.horizontal(|ui| {
                 let r = ui.add(egui::TextEdit::singleline(&mut ed.hex).hint_text("#RRGGBB").desired_width(90.0));
-                super::label_text_edit(&r, &ed.hex, "Hex color");
+                super::label_text_edit(&r, &ed.hex, tr("Hex color"));
                 let valid = p.color(ed.hex.trim()).ok().filter(|_| ed.hex.trim().starts_with('#'));
-                if ui.add_enabled(valid.is_some(), Button::tertiary("Apply")).clicked()
+                if ui.add_enabled(valid.is_some(), Button::tertiary(tr("Apply"))).clicked()
                     || (r.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter)) && valid.is_some())
                 {
                     t.set(p, valid);

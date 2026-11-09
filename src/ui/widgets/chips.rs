@@ -90,8 +90,8 @@ pub fn channel_grid_section(ui: &mut Ui, title: &str, groups: Vec<ChipGroup>, ex
             egui::RichText::new(title).font(FontId::new(15.0, family(SANS_MEDIUM))).color(theme.color(Token::Ink1)),
         );
         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-            out.clear = ui.add(Button::tertiary("Clear")).clicked();
-            out.all = ui.add(Button::tertiary("All")).clicked();
+            out.clear = ui.add(Button::tertiary(crate::l10n::tr("Clear"))).clicked();
+            out.all = ui.add(Button::tertiary(crate::l10n::tr("All"))).clicked();
             for (k, label) in extra.iter().enumerate().rev() {
                 if ui.add(Button::tertiary(label)).clicked() {
                     out.extra = Some(k);

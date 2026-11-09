@@ -3,6 +3,7 @@
 
 use crate::app::settings::ThemePref;
 use crate::app::{APP_NAME, LaApp};
+use crate::l10n::tr;
 use crate::ui::ThemeExt;
 use crate::ui::icons;
 use crate::ui::theme::{ThemeKind, Token};
@@ -50,12 +51,12 @@ impl LaApp {
                 Frame::new().inner_margin(Margin { left: 32, right: 24, top: 24, bottom: 16 }).show(ui, |ui| {
                     ui.horizontal(|ui| {
                         ui.label(
-                            egui::RichText::new(format!("Welcome to {APP_NAME}"))
+                            egui::RichText::new(tr("Welcome to {}").replacen("{}", APP_NAME, 1))
                                 .text_style(Text::Display.style())
                                 .color(theme.color(Token::Ink1)),
                         );
                         ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-                            if super::ranges::icon_button(ui, "Close", icons::close).clicked() {
+                            if super::ranges::icon_button(ui, tr("Close"), icons::close).clicked() {
                                 close = true;
                             }
                         });
@@ -70,8 +71,14 @@ impl LaApp {
                         }
                         ui.add_space(4.0);
                         ui.label(
-                            egui::RichText::new(format!("Step {} of {STEPS}", step + 1))
-                                .color(theme.color(Token::Ink4)),
+                            egui::RichText::new(
+                                tr("Step {} of {}").replacen("{}", &(step + 1).to_string(), 1).replacen(
+                                    "{}",
+                                    &STEPS.to_string(),
+                                    1,
+                                ),
+                            )
+                            .color(theme.color(Token::Ink4)),
                         );
                     });
                 });
@@ -87,19 +94,19 @@ impl LaApp {
                 ui.separator();
                 Frame::new().inner_margin(Margin::symmetric(24, 16)).show(ui, |ui| {
                     ui.horizontal(|ui| {
-                        if ui.add(Button::tertiary("Skip")).clicked() {
+                        if ui.add(Button::tertiary(tr("Skip"))).clicked() {
                             close = true;
                         }
                         ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
                             let last = step + 1 == STEPS;
-                            if ui.add(Button::primary(if last { "Finish" } else { "Next" })).clicked() {
+                            if ui.add(Button::primary(if last { tr("Finish") } else { tr("Next") })).clicked() {
                                 if last {
                                     close = true;
                                 } else {
                                     next_step = Some(step + 1);
                                 }
                             }
-                            if step > 0 && ui.add(Button::secondary("Previous")).clicked() {
+                            if step > 0 && ui.add(Button::secondary(tr("Previous"))).clicked() {
                                 next_step = Some(step - 1);
                             }
                         });
@@ -116,7 +123,7 @@ impl LaApp {
     /// Step 1: three theme cards; a click applies the theme live.
     fn onboarding_theme(&mut self, ui: &mut Ui) {
         let theme = ui.la_theme();
-        section(ui, "Choose a theme");
+        section(ui, tr("Choose a theme"));
         ui.add_space(20.0);
         let current = self.settings.appearance.theme;
         let mut picked = None;
@@ -158,38 +165,38 @@ impl LaApp {
     /// Step 2: what the platform needs, and whether a device is there.
     fn onboarding_devices(&mut self, ui: &mut Ui) {
         let theme = ui.la_theme();
-        section(ui, "Device access");
+        section(ui, tr("Device access"));
         ui.add_space(12.0);
         let body = |ui: &mut Ui, text: &str| {
             ui.label(egui::RichText::new(text).color(theme.color(Token::Ink2)));
         };
         if cfg!(target_os = "linux") {
             let (ok, text) = if super::help::udev_rules_installed() {
-                (true, "udev rules: installed ✓")
+                (true, tr("udev rules: installed ✓"))
             } else {
-                (false, "udev rules: not found !")
+                (false, tr("udev rules: not found !"))
             };
             let color = if ok { Token::Good } else { Token::Caution };
             ui.label(egui::RichText::new(text).color(theme.color(color)));
             ui.add_space(4.0);
-            body(ui, "Replug the device after installing.");
+            body(ui, tr("Replug the device after installing."));
         } else if cfg!(target_os = "windows") {
-            body(ui, "Most devices need the WinUSB driver.");
-            ui.hyperlink_to("Zadig instructions ↗", "https://sigrok.org/wiki/Windows");
+            body(ui, tr("Most devices need the WinUSB driver."));
+            ui.hyperlink_to(tr("Zadig instructions ↗"), "https://sigrok.org/wiki/Windows");
         } else {
-            body(ui, "No driver is needed. Firmware for some devices is loaded on first use.");
+            body(ui, tr("No driver is needed. Firmware for some devices is loaded on first use."));
         }
         ui.add_space(8.0);
-        if ui.link("Device Connection Help…").clicked() {
+        if ui.link(tr("Device Connection Help…")).clicked() {
             self.open_connection_help();
         }
         ui.add_space(16.0);
         let found = self.devices.as_ref().map(|d| d.iter().filter(|d| !d.is_demo).count());
         let status = match found {
-            None => "Looking for devices…".to_owned(),
-            Some(0) => "No device found yet. You can continue and connect later.".to_owned(),
-            Some(1) => "1 device found".to_owned(),
-            Some(n) => format!("{n} devices found"),
+            None => tr("Looking for devices…").to_owned(),
+            Some(0) => tr("No device found yet. You can continue and connect later.").to_owned(),
+            Some(1) => tr("1 device found").to_owned(),
+            Some(n) => tr("{} devices found").replacen("{}", &n.to_string(), 1),
         };
         let color = if found.is_some_and(|n| n > 0) { Token::Good } else { Token::Ink3 };
         ui.label(egui::RichText::new(status).color(theme.color(color)));
@@ -199,7 +206,7 @@ impl LaApp {
 /// Step 3: `Space`, `?`, and dropping a file.
 fn onboarding_tips(ui: &mut Ui) {
     let theme = ui.la_theme();
-    section(ui, "Three things to know");
+    section(ui, tr("Three things to know"));
     ui.add_space(16.0);
     let text = |ui: &mut Ui, t: &str| {
         ui.label(egui::RichText::new(t).color(theme.color(Token::Ink2)));
@@ -213,18 +220,18 @@ fn onboarding_tips(ui: &mut Ui) {
     ui.spacing_mut().item_spacing.y = 14.0;
     ui.horizontal(|ui| {
         lead(ui, &|ui| shortcut_chip(ui, "Space"));
-        text(ui, "starts and stops recording");
+        text(ui, tr("starts and stops recording"));
     });
     ui.horizontal(|ui| {
         lead(ui, &|ui| shortcut_chip(ui, "?"));
-        text(ui, "shows every keyboard shortcut");
+        text(ui, tr("shows every keyboard shortcut"));
     });
     ui.horizontal(|ui| {
         lead(ui, &|ui| {
             let (r, _) = ui.allocate_exact_size(vec2(18.0, 18.0), Sense::hover());
             icons::file(ui.painter(), r, ui.la_theme().color(Token::Ink3));
         });
-        text(ui, "drop a capture file anywhere to open it");
+        text(ui, tr("drop a capture file anywhere to open it"));
     });
 }
 

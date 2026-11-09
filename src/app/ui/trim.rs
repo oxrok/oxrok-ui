@@ -6,6 +6,7 @@ use super::dialogs::modal_frame;
 use crate::app::LaApp;
 use crate::core::CaptureTime;
 use crate::core::capture::CaptureState;
+use crate::l10n::tr;
 use crate::ui::Token;
 use crate::ui::theme::ThemeExt;
 use crate::ui::typography::Text;
@@ -28,11 +29,11 @@ pub(crate) type TrimItem = (&'static str, Option<CaptureTime>, Option<CaptureTim
 /// the visible range, *Off Screen*.
 pub(crate) fn point_items(t: CaptureTime, point: &str, visible: Option<(CaptureTime, CaptureTime)>) -> Vec<TrimItem> {
     let mut v = vec![
-        ("Before This Point", Some(t), None, point.to_owned()),
-        ("After This Point", None, Some(t), point.to_owned()),
+        (tr("Before This Point"), Some(t), None, point.to_owned()),
+        (tr("After This Point"), None, Some(t), point.to_owned()),
     ];
     if let Some((a, b)) = visible {
-        v.push(("Off Screen", Some(a), Some(b), "the visible range".to_owned()));
+        v.push((tr("Off Screen"), Some(a), Some(b), tr("the visible range").to_owned()));
     }
     v
 }
@@ -53,9 +54,9 @@ impl LaApp {
             return None;
         }
         let mut pick = None;
-        super::rowctl::submenu(ui, "Delete Data", 200.0, None, |ui| {
+        super::rowctl::submenu(ui, tr("Delete Data"), 200.0, None, |ui| {
             for (k, (label, ..)) in items.iter().enumerate() {
-                if menu_item(ui, label, None).clicked() {
+                if menu_item(ui, tr(label), None).clicked() {
                     pick = Some(k);
                 }
             }
@@ -90,39 +91,49 @@ impl LaApp {
         let (before, after) = (k0 - b, e - k1);
         let deleted = before + after;
         let lead = match (before > CaptureTime::ZERO, after > CaptureTime::ZERO) {
-            (true, true) => {
-                format!("Keep {} ({}) and delete {} of data before and after it.", dur(k1 - k0), req.what, dur(deleted))
+            (true, true) => tr("Keep {} ({}) and delete {} of data before and after it.")
+                .replacen("{}", &dur(k1 - k0), 1)
+                .replacen("{}", &req.what, 1)
+                .replacen("{}", &dur(deleted), 1),
+            (true, false) => {
+                tr("Delete {} of data before {}.").replacen("{}", &dur(before), 1).replacen("{}", &req.what, 1)
             }
-            (true, false) => format!("Delete {} of data before {}.", dur(before), req.what),
-            _ => format!("Delete {} of data after {}.", dur(after), req.what),
+            _ => tr("Delete {} of data after {}.").replacen("{}", &dur(after), 1).replacen("{}", &req.what, 1),
         };
         let mut consequences = Vec::new();
         if !s.analyzers.is_empty() {
-            consequences.push("Analyzers restart.".to_owned());
+            consequences.push(tr("Analyzers restart.").to_owned());
         }
         let markers_gone = s.markers.items.iter().filter(|i| i.span().0 < k0 || i.span().1 > k1).count();
         let ranges_gone = s.ranges.items.iter().filter(|r| r.t.0 < k0 || r.t.1 > k1).count();
-        let plural = |n: usize, one: &str, many: &str| format!("{n} {}", if n == 1 { one } else { many });
+        let plural =
+            |n: usize, one: &'static str, many: &'static str| format!("{n} {}", tr(if n == 1 { one } else { many }));
         match (markers_gone, ranges_gone) {
             (0, 0) => {}
-            (m, 0) => consequences
-                .push(format!("{} outside the kept data are removed.", plural(m, "timing marker", "timing markers"))),
-            (0, r) => consequences
-                .push(format!("{} outside the kept data are removed.", plural(r, "measurement", "measurements"))),
-            (m, r) => consequences.push(format!(
-                "{} and {} outside the kept data are removed.",
-                plural(m, "timing marker", "timing markers"),
-                plural(r, "measurement", "measurements")
+            (m, 0) => consequences.push(tr("{} outside the kept data are removed.").replacen(
+                "{}",
+                &plural(m, "timing marker", "timing markers"),
+                1,
             )),
+            (0, r) => consequences.push(tr("{} outside the kept data are removed.").replacen(
+                "{}",
+                &plural(r, "measurement", "measurements"),
+                1,
+            )),
+            (m, r) => consequences.push(
+                tr("{} and {} outside the kept data are removed.")
+                    .replacen("{}", &plural(m, "timing marker", "timing markers"), 1)
+                    .replacen("{}", &plural(r, "measurement", "measurements"), 1),
+            ),
         }
         let t0 = s.origin.resolve(&s.markers, s.trigger);
         let at_start = s.origin == crate::core::markers::TimeOrigin::CaptureStart;
         if !at_start && (t0 < k0 || t0 > k1) {
-            consequences.push("T0 moves to the start of the capture.".to_owned());
+            consequences.push(tr("T0 moves to the start of the capture.").to_owned());
         }
         // The samples exist nowhere else.
         let unsaved = !s.samples_saved;
-        let label = format!("Delete {}", dur(deleted));
+        let label = tr("Delete {}").replacen("{}", &dur(deleted), 1);
         let theme = ctx.la_theme();
         let (mut confirm, mut cancel, mut save_copy) = (false, false, false);
         let resp =
@@ -130,7 +141,7 @@ impl LaApp {
                 ui.set_width(460.0);
                 Frame::new().inner_margin(Margin::same(32)).show(ui, |ui| {
                     ui.label(
-                        egui::RichText::new("Delete Data")
+                        egui::RichText::new(tr("Delete Data"))
                             .text_style(Text::Display.style())
                             .color(theme.color(Token::Ink1)),
                     );
@@ -154,12 +165,12 @@ impl LaApp {
                         ui.add_space(10.0);
                         ui.horizontal_wrapped(|ui| {
                             ui.label(
-                                egui::RichText::new("⚠ The deleted data can't be recovered.")
+                                egui::RichText::new(tr("⚠ The deleted data can't be recovered."))
                                     .color(theme.color(Token::Caution)),
                             );
                             let link = ui.add(
                                 egui::Button::new(
-                                    egui::RichText::new("Save a Copy First…").color(theme.color(Token::FlareLink)),
+                                    egui::RichText::new(tr("Save a Copy First…")).color(theme.color(Token::FlareLink)),
                                 )
                                 .frame(false),
                             );
@@ -177,7 +188,7 @@ impl LaApp {
                             confirm = true;
                         }
                         ui.add_space(8.0);
-                        if ui.add(Button::secondary("Cancel")).clicked() {
+                        if ui.add(Button::secondary(tr("Cancel"))).clicked() {
                             cancel = true;
                         }
                     });

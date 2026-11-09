@@ -4,6 +4,7 @@
 use super::dialogs::modal_frame;
 use crate::app::settings::{RECENT_FILES, RecordOnOpened, RelativeZoom, ThemePref, UI_SCALE_MAX, UI_SCALE_MIN};
 use crate::app::{AppEvent, LaApp};
+use crate::l10n::tr;
 use crate::ui::Token;
 use crate::ui::theme::ThemeExt;
 use crate::ui::typography::Text;
@@ -45,7 +46,7 @@ impl Section {
     ];
 
     pub fn label(self) -> &'static str {
-        match self {
+        let en = match self {
             Section::Appearance => "Appearance",
             Section::Waveform => "Waveform",
             Section::TimeLabels => "Time Labels",
@@ -54,37 +55,38 @@ impl Section {
             Section::Decoders => "Decoders",
             Section::History => "Data & History",
             Section::Related => "Related",
-        }
+        };
+        crate::l10n::tr(en)
     }
 
     /// The item labels, for search.
-    fn items(self) -> &'static [&'static str] {
+    fn items(self) -> Vec<&'static str> {
         match self {
-            Section::Appearance => &["Theme", "UI scale", "Show tooltips"],
-            Section::Waveform => &[
-                "Color waveforms by channel",
-                "Trace width",
-                "Auto layout",
-                "Show interactive measurement",
-                "Zoom relative to",
-                "Wire status interval",
+            Section::Appearance => vec![tr("Theme"), tr("UI scale"), tr("Show tooltips"), tr("Language")],
+            Section::Waveform => vec![
+                tr("Color waveforms by channel"),
+                tr("Trace width"),
+                tr("Auto layout"),
+                tr("Show interactive measurement"),
+                tr("Zoom relative to"),
+                tr("Wire status interval"),
             ],
-            Section::TimeLabels => &["Use UTC timezone", "Use ISO 8601 format"],
-            Section::Capture => &[
-                "Center on trigger after capture",
-                "Ask before replacing an unsaved capture",
-                "When recording on an opened file",
+            Section::TimeLabels => vec![tr("Use UTC timezone"), tr("Use ISO 8601 format")],
+            Section::Capture => vec![
+                tr("Center on trigger after capture"),
+                tr("Ask before replacing an unsaved capture"),
+                tr("When recording on an opened file"),
             ],
-            Section::Files => &["Rename the session to the saved file name", "Default export folder"],
-            Section::Decoders => &["Additional decoder directory"],
-            Section::History => &["Measurement metrics", "Recent files", "Recent commands"],
-            Section::Related => &["Keyboard Shortcuts", "Probe Colors"],
+            Section::Files => vec![tr("Rename the session to the saved file name"), tr("Default export folder")],
+            Section::Decoders => vec![tr("Additional decoder directory")],
+            Section::History => vec![tr("Measurement metrics"), tr("Recent files"), tr("Recent commands")],
+            Section::Related => vec![tr("Keyboard Shortcuts"), tr("Probe Colors")],
         }
     }
 
     /// The name or an item has every word of `query`.
     fn matches(self, query: &str) -> bool {
-        let hay = std::iter::once(self.label()).chain(self.items().iter().copied()).collect::<Vec<_>>().join(" ");
+        let hay = std::iter::once(self.label()).chain(self.items()).collect::<Vec<_>>().join(" ");
         let hay = hay.to_lowercase();
         query.to_lowercase().split_whitespace().all(|w| hay.contains(w))
     }
@@ -160,9 +162,9 @@ fn path_row(ui: &mut Ui, label: &str, path: Option<&PathBuf>, placeholder: &str)
             .desired_width(ui.available_width() - if path.is_some() { 170.0 } else { 90.0 });
         let r = ui.add(field);
         super::label_text_edit(&r, &text, label);
-        out.0 = ui.add(Button::secondary("Browse")).clicked();
+        out.0 = ui.add(Button::secondary(tr("Browse"))).clicked();
         if path.is_some() {
-            out.1 = ui.add(Button::tertiary("Clear")).clicked();
+            out.1 = ui.add(Button::tertiary(tr("Clear"))).clicked();
         }
     });
     ui.add_space(14.0);
@@ -216,12 +218,12 @@ impl LaApp {
                 Frame::new().inner_margin(Margin { left: 32, right: 16, top: 20, bottom: 16 }).show(ui, |ui| {
                     ui.horizontal(|ui| {
                         ui.label(
-                            egui::RichText::new("Settings")
+                            egui::RichText::new(crate::l10n::tr("Settings"))
                                 .text_style(Text::Display.style())
                                 .color(theme.color(Token::Ink1)),
                         );
                         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                            if super::ranges::icon_button(ui, "Close settings", crate::ui::icons::close).clicked() {
+                            if super::ranges::icon_button(ui, tr("Close settings"), crate::ui::icons::close).clicked() {
                                 close = true;
                             }
                         });
@@ -240,10 +242,10 @@ impl LaApp {
                     ui.add_space(12.0);
                     let r = ui.add(
                         egui::TextEdit::singleline(&mut d.search)
-                            .hint_text("Search settings")
+                            .hint_text(crate::l10n::tr("Search settings"))
                             .desired_width(NAV_W - 24.0),
                     );
-                    super::label_text_edit(&r, &d.search, "Search settings");
+                    super::label_text_edit(&r, &d.search, crate::l10n::tr("Search settings"));
                 });
                 nav_ui.add_space(12.0);
                 for s in &shown {
@@ -280,7 +282,7 @@ impl LaApp {
                 egui::ScrollArea::vertical().auto_shrink([false, false]).show(&mut c_ui, |ui| {
                     if shown.is_empty() {
                         ui.label(
-                            egui::RichText::new("No settings match")
+                            egui::RichText::new(crate::l10n::tr("No settings match"))
                                 .text_style(Text::Prose.style())
                                 .color(theme.color(Token::Ink3)),
                         );
@@ -302,13 +304,13 @@ impl LaApp {
                 ui.painter().hline(foot.x_range(), foot.top(), Stroke::new(1.0, theme.color(Token::Seam)));
                 Frame::new().inner_margin(Margin::same(24)).show(ui, |ui| {
                     ui.horizontal(|ui| {
-                        if ui.add(Button::secondary("Reset all settings…")).clicked() {
+                        if ui.add(Button::secondary(crate::l10n::tr("Reset all settings…"))).clicked() {
                             after.push(Box::new(|app: &mut LaApp| {
                                 app.ui.confirm = Some(super::dialogs::Confirm::reset_all_settings());
                             }));
                         }
                         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                            if ui.add(Button::primary("Close")).clicked() {
+                            if ui.add(Button::primary(crate::l10n::tr("Close"))).clicked() {
                                 close = true;
                             }
                         });
@@ -341,58 +343,75 @@ impl LaApp {
         let s = &mut self.settings;
         match section {
             Section::Appearance => {
-                row(ui, "Theme", SEGMENTED_H, |ui| {
+                row(ui, crate::l10n::tr("Language"), FIELD_H, |ui| {
+                    use crate::l10n::Language;
+                    let names: Vec<&str> = Language::ALL.iter().map(|l| l.name()).collect();
+                    let before = Language::ALL.iter().position(|l| *l == s.language).unwrap_or(0);
+                    let mut i = before;
+                    ui.allocate_ui(vec2(200.0, FIELD_H), |ui| {
+                        ui.add(Dropdown::new(crate::l10n::tr("Language"), &mut i, &names))
+                    });
+                    if i != before {
+                        s.language = Language::ALL[i];
+                        let lang = s.language;
+                        after.push(Box::new(move |app: &mut LaApp| {
+                            crate::l10n::set(lang);
+                            app.ui.ctx.request_repaint();
+                        }));
+                    }
+                });
+                row(ui, crate::l10n::tr("Theme"), SEGMENTED_H, |ui| {
                     let i = ThemePref::ALL.iter().position(|t| *t == s.appearance.theme).unwrap_or(2);
-                    if let Some(k) = choice(ui, "set-theme", &["Light", "Dark", "System"], i) {
+                    if let Some(k) = choice(ui, "set-theme", &ThemePref::ALL.map(ThemePref::label), i) {
                         s.appearance.theme = ThemePref::ALL[k];
                     }
                 });
-                row(ui, "UI scale", FIELD_H, |ui| {
+                row(ui, crate::l10n::tr("UI scale"), FIELD_H, |ui| {
                     let v = s.appearance.ui_scale;
                     let text = format!("{v:.1}");
                     let step = ui
                         .allocate_ui(vec2(140.0, FIELD_H), |ui| {
-                            stepper(ui, "UI scale", &text, v > UI_SCALE_MIN + 1e-3, v < UI_SCALE_MAX - 1e-3)
+                            stepper(ui, tr("UI scale"), &text, v > UI_SCALE_MIN + 1e-3, v < UI_SCALE_MAX - 1e-3)
                         })
                         .inner;
                     if step != 0 {
                         after.push(Box::new(move |app: &mut LaApp| app.step_ui_scale(Some(step))));
                     }
                     ui.add_space(12.0);
-                    if (v - 1.0).abs() > 1e-3 && ui.add(Button::tertiary("Reset")).clicked() {
+                    if (v - 1.0).abs() > 1e-3 && ui.add(Button::tertiary(crate::l10n::tr("Reset"))).clicked() {
                         after.push(Box::new(|app: &mut LaApp| app.step_ui_scale(None)));
                     }
                 });
-                check(ui, &mut s.appearance.show_tooltips, "Show tooltips", None);
+                check(ui, &mut s.appearance.show_tooltips, crate::l10n::tr("Show tooltips"), None);
             }
             Section::Waveform => {
                 check(
                     ui,
                     &mut s.waveform.color_waveforms,
-                    "Color waveforms by channel",
-                    Some("Channel colors follow the resistor color code. Off: every trace in one neutral color."),
+                    tr("Color waveforms by channel"),
+                    Some(tr("Channel colors follow the resistor color code. Off: every trace in one neutral color.")),
                 );
-                row(ui, "Trace width", SEGMENTED_H, |ui| {
+                row(ui, tr("Trace width"), SEGMENTED_H, |ui| {
                     let i = TraceWidth::ALL.iter().position(|w| *w == s.waveform.trace_width).unwrap_or(1);
-                    if let Some(k) = choice(ui, "set-trace", &["Thin", "Normal", "Bold"], i) {
+                    if let Some(k) = choice(ui, "set-trace", &[tr("Thin"), tr("Normal"), tr("Bold")], i) {
                         s.waveform.trace_width = TraceWidth::ALL[k];
                     }
                 });
-                check(ui, &mut s.waveform.auto_layout, "Auto layout", None);
-                check(ui, &mut s.waveform.show_interactive_measurement, "Show interactive measurement", None);
-                row(ui, "Zoom relative to", SEGMENTED_H, |ui| {
+                check(ui, &mut s.waveform.auto_layout, tr("Auto layout"), None);
+                check(ui, &mut s.waveform.show_interactive_measurement, tr("Show interactive measurement"), None);
+                row(ui, tr("Zoom relative to"), SEGMENTED_H, |ui| {
                     let i = usize::from(s.waveform.zoom_relative_to == RelativeZoom::Mouse);
-                    if let Some(k) = choice(ui, "set-zoom-rel", &["Center", "Mouse"], i) {
+                    if let Some(k) = choice(ui, "set-zoom-rel", &[tr("Center"), tr("Mouse")], i) {
                         s.waveform.zoom_relative_to = if k == 1 { RelativeZoom::Mouse } else { RelativeZoom::Center };
                     }
                 });
-                row(ui, "Wire status interval", FIELD_H, |ui| {
+                row(ui, tr("Wire status interval"), FIELD_H, |ui| {
                     let mut v = s.waveform.wire_status_interval_ms as f64;
                     let changed = ui
                         .allocate_ui(vec2(140.0, FIELD_H), |ui| {
                             crate::ui::widgets::number_input(
                                 ui,
-                                "Wire status interval",
+                                tr("Wire status interval"),
                                 &mut v,
                                 "ms",
                                 Some((20.0, 1000.0, 10.0)),
@@ -405,7 +424,7 @@ impl LaApp {
                 });
             }
             Section::TimeLabels => {
-                check(ui, &mut s.time_labels.utc, "Use UTC timezone", None);
+                check(ui, &mut s.time_labels.utc, tr("Use UTC timezone"), None);
                 let now = crate::core::WallClock::now();
                 let ex = |iso| {
                     crate::core::format::wall_clock(
@@ -414,32 +433,32 @@ impl LaApp {
                         crate::core::format::WallClockFormat { iso, utc: s.time_labels.utc },
                     )
                 };
-                let tip = format!("ISO 8601: {}\nDefault: {}", ex(true), ex(false));
-                check(ui, &mut s.time_labels.iso8601, "Use ISO 8601 format", Some(&tip));
+                let tip = tr("ISO 8601: {}\nDefault: {}").replacen("{}", &ex(true), 1).replacen("{}", &ex(false), 1);
+                check(ui, &mut s.time_labels.iso8601, tr("Use ISO 8601 format"), Some(&tip));
             }
             Section::Capture => {
-                check(ui, &mut s.capture.center_on_trigger, "Center on trigger after capture", None);
-                check(ui, &mut s.capture.ask_replace_unsaved, "Ask before replacing an unsaved capture", None);
+                check(ui, &mut s.capture.center_on_trigger, tr("Center on trigger after capture"), None);
+                check(ui, &mut s.capture.ask_replace_unsaved, tr("Ask before replacing an unsaved capture"), None);
                 check(
                     ui,
                     &mut s.capture.pause_analyzers_on_repeat,
-                    "Pause analyzers during Repeat",
-                    Some("No decoding while a Repeat run goes on; the kept round is decoded when it ends."),
+                    tr("Pause analyzers during Repeat"),
+                    Some(tr("No decoding while a Repeat run goes on; the kept round is decoded when it ends.")),
                 );
-                row(ui, "When recording on an opened file", FIELD_H, |ui| {
-                    let opts = ["Ask", "New session", "Replace data"];
+                row(ui, tr("When recording on an opened file"), FIELD_H, |ui| {
+                    let opts = [tr("Ask"), tr("New session"), tr("Replace data")];
                     let all = [RecordOnOpened::Ask, RecordOnOpened::NewSession, RecordOnOpened::Replace];
                     let mut i = all.iter().position(|r| *r == s.capture.record_on_opened).unwrap_or(0);
                     ui.allocate_ui(vec2(200.0, FIELD_H), |ui| {
-                        ui.add(Dropdown::new("When recording on an opened file", &mut i, &opts))
+                        ui.add(Dropdown::new(tr("When recording on an opened file"), &mut i, &opts))
                     });
                     s.capture.record_on_opened = all[i];
                 });
             }
             Section::Files => {
-                check(ui, &mut s.files.rename_on_save, "Rename the session to the saved file name", None);
+                check(ui, &mut s.files.rename_on_save, tr("Rename the session to the saved file name"), None);
                 let docs = dirs::document_dir().map(|p| p.display().to_string()).unwrap_or_default();
-                let (browse, clear) = path_row(ui, "Default export folder", s.files.export_dir.as_ref(), &docs);
+                let (browse, clear) = path_row(ui, tr("Default export folder"), s.files.export_dir.as_ref(), &docs);
                 if browse {
                     let start = s.files.export_dir.clone();
                     after.push(Box::new(move |app: &mut LaApp| app.pick_settings_folder(Folder::Export, start)));
@@ -450,7 +469,7 @@ impl LaApp {
             }
             Section::Decoders => {
                 let (browse, clear) =
-                    path_row(ui, "Additional decoder directory", s.decoders.extra_dir.as_ref(), "None");
+                    path_row(ui, tr("Additional decoder directory"), s.decoders.extra_dir.as_ref(), tr("None"));
                 if browse {
                     let start = s.decoders.extra_dir.clone();
                     after.push(Box::new(move |app: &mut LaApp| app.pick_settings_folder(Folder::Decoders, start)));
@@ -463,41 +482,40 @@ impl LaApp {
                     crate::ui::icons::warning(ui.painter(), g, theme.color(Token::Caution));
                     ui.add_space(6.0);
                     ui.label(
-                        egui::RichText::new("Restart required. Decoders are loaded only at application start.")
+                        egui::RichText::new(tr("Restart required. Decoders are loaded only at application start."))
                             .text_style(Text::Prose.style())
                             .color(theme.color(Token::Ink3)),
                     );
                 });
             }
             Section::History => {
-                row(ui, "Measurement metrics", FIELD_H, |ui| {
+                row(ui, tr("Measurement metrics"), FIELD_H, |ui| {
                     let default = crate::app::settings::MeasurementMetrics::default();
-                    let r = ui.add_enabled(s.measurement_metrics != default, Button::secondary("Reset to defaults"));
+                    let r =
+                        ui.add_enabled(s.measurement_metrics != default, Button::secondary(tr("Reset to defaults")));
                     if r.clicked() {
                         s.measurement_metrics = default;
                     }
                 });
                 let n = s.files.recent_files.iter().filter(|p| p.exists()).count();
-                row(ui, "Recent files", FIELD_H, |ui| {
-                    ui.label(
-                        egui::RichText::new(format!("{n} of {RECENT_FILES}"))
-                            .text_style(Text::Prose.style())
-                            .color(theme.color(Token::Ink3)),
-                    );
+                row(ui, tr("Recent files"), FIELD_H, |ui| {
+                    let text =
+                        tr("{} of {}").replacen("{}", &n.to_string(), 1).replacen("{}", &RECENT_FILES.to_string(), 1);
+                    ui.label(egui::RichText::new(text).text_style(Text::Prose.style()).color(theme.color(Token::Ink3)));
                     ui.add_space(12.0);
-                    if ui.add_enabled(n > 0, Button::secondary("Clear")).clicked() {
+                    if ui.add_enabled(n > 0, Button::secondary(tr("Clear"))).clicked() {
                         s.files.recent_files.clear();
                     }
                 });
-                row(ui, "Recent commands", FIELD_H, |ui| {
+                row(ui, tr("Recent commands"), FIELD_H, |ui| {
                     let any = !s.history.recent_commands.is_empty();
-                    if ui.add_enabled(any, Button::secondary("Reset")).clicked() {
+                    if ui.add_enabled(any, Button::secondary(crate::l10n::tr("Reset"))).clicked() {
                         s.history.recent_commands.clear();
                     }
                 });
             }
             Section::Related => {
-                if ui.add(Button::tertiary("Keyboard Shortcuts")).clicked() {
+                if ui.add(Button::tertiary(tr("Keyboard Shortcuts"))).clicked() {
                     after.push(Box::new(|app: &mut LaApp| {
                         app.ui.settings_dialog = None;
                         app.ui.shortcuts_open = true;
@@ -506,8 +524,8 @@ impl LaApp {
                 }
                 ui.add_space(8.0);
                 let probe = self.session.is_some();
-                let r = ui.add_enabled(probe, Button::tertiary("Probe Colors…"));
-                if r.on_disabled_hover_text("Open a device first.").clicked() {
+                let r = ui.add_enabled(probe, Button::tertiary(tr("Probe Colors…")));
+                if r.on_disabled_hover_text(tr("Open a device first.")).clicked() {
                     after.push(Box::new(|app: &mut LaApp| {
                         app.ui.settings_dialog = None;
                         app.ui.open_probe_editor = true;

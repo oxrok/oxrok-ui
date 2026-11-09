@@ -3,6 +3,7 @@
 
 use crate::app::LaApp;
 use crate::backend::Rates;
+use crate::l10n::tr;
 use crate::ui::Token;
 use crate::ui::theme::ThemeExt;
 use crate::ui::typography::Text;
@@ -40,9 +41,13 @@ impl Confirm {
     /// Says how many go; pairs count as two markers.
     pub fn delete_all_markers(n: usize) -> Self {
         Self {
-            title: "Delete Timing Markers",
-            body: format!("Delete all {n} timing {}?", if n == 1 { "marker" } else { "markers" }),
-            confirm: "Delete All",
+            title: tr("Delete Timing Markers"),
+            body: if n == 1 {
+                tr("Delete all {} timing marker?").replacen("{}", &n.to_string(), 1)
+            } else {
+                tr("Delete all {} timing markers?").replacen("{}", &n.to_string(), 1)
+            },
+            confirm: tr("Delete All"),
             action: ConfirmAction::DeleteAllMarkers,
         }
     }
@@ -50,18 +55,22 @@ impl Confirm {
     /// what's reset and what isn't.
     pub fn reset_all_settings() -> Self {
         Self {
-            title: "Reset All Settings",
-            body: "Reset all settings to defaults? Your capture files and probe profiles are not affected.".into(),
-            confirm: "Reset",
+            title: tr("Reset All Settings"),
+            body: tr("Reset all settings to defaults? Your capture files and probe profiles are not affected.").into(),
+            confirm: tr("Reset"),
             action: ConfirmAction::ResetAllSettings,
         }
     }
 
     pub fn delete_all_ranges(n: usize) -> Self {
         Self {
-            title: "Delete Measurements",
-            body: format!("Delete all {n} {}?", if n == 1 { "measurement" } else { "measurements" }),
-            confirm: "Delete All",
+            title: tr("Delete Measurements"),
+            body: if n == 1 {
+                tr("Delete all {} measurement?").replacen("{}", &n.to_string(), 1)
+            } else {
+                tr("Delete all {} measurements?").replacen("{}", &n.to_string(), 1)
+            },
+            confirm: tr("Delete All"),
             action: ConfirmAction::DeleteAllRanges,
         }
     }
@@ -92,7 +101,7 @@ impl LaApp {
                         result = Some(true);
                     }
                     ui.add_space(8.0);
-                    if ui.add(Button::secondary("Cancel")).clicked() {
+                    if ui.add(Button::secondary(tr("Cancel"))).clicked() {
                         result = Some(false);
                     }
                 });
@@ -118,6 +127,7 @@ impl LaApp {
             }
             ConfirmAction::ResetAllSettings => {
                 self.settings.reset_all();
+                crate::l10n::set(self.settings.language);
                 self.ui.auto_layout_for = None;
                 self.mark_settings_dirty();
             }
@@ -173,26 +183,29 @@ impl LaApp {
             (Some(lo), Some(hi)) => {
                 format!("{} – {}", super::inspector::rate_label(*lo), super::inspector::rate_label(*hi))
             }
-            _ => "unknown".into(),
+            _ => tr("unknown").into(),
         };
         let caps = s.caps.as_ref();
         let rows: Vec<(&str, String)> = vec![
-            ("Driver", d.driver.clone()),
-            ("Vendor", d.vendor.clone()),
-            ("Model", d.model.clone()),
-            ("Version", d.version.clone()),
-            ("Serial / connection", d.serial_or_conn.clone()),
-            ("Digital channels", d.digital_channels().count().to_string()),
-            ("Analog channels", d.analog_channels().count().to_string()),
+            (tr("Driver"), d.driver.clone()),
+            (tr("Vendor"), d.vendor.clone()),
+            (tr("Model"), d.model.clone()),
+            (tr("Version"), d.version.clone()),
+            (tr("Serial / connection"), d.serial_or_conn.clone()),
+            (tr("Digital channels"), d.digital_channels().count().to_string()),
+            (tr("Analog channels"), d.analog_channels().count().to_string()),
             (
-                "Sample rates",
+                tr("Sample rates"),
                 if matches!(caps.map(|c| &c.samplerates), Some(Rates::Range { .. })) {
-                    format!("{rate_range} (range)")
+                    tr("{} (range)").replacen("{}", &rate_range, 1)
                 } else {
                     rate_range
                 },
             ),
-            ("Hardware trigger", if caps.is_some_and(|c| c.hw_trigger.is_some()) { "Yes".into() } else { "No".into() }),
+            (
+                tr("Hardware trigger"),
+                if caps.is_some_and(|c| c.hw_trigger.is_some()) { tr("Yes").into() } else { tr("No").into() },
+            ),
         ];
         let title = self.device_label(d);
         // The Name field: the nickname, or vendor + model.
@@ -207,23 +220,25 @@ impl LaApp {
             ui.label(egui::RichText::new(&title).text_style(Text::Display.style()).color(theme.color(Token::Ink1)));
             ui.add_space(16.0);
             ui.horizontal(|ui| {
-                ui.label(egui::RichText::new("Name").color(theme.color(Token::Ink3)));
+                ui.label(egui::RichText::new(tr("Name")).color(theme.color(Token::Ink3)));
                 ui.add_space(12.0);
                 let w = ui.available_width() - if has_nickname { 130.0 } else { 0.0 };
                 let r = ui.add(egui::TextEdit::singleline(&mut name).desired_width(w));
-                super::label_text_edit(&r, &name, "Device name");
+                super::label_text_edit(&r, &name, tr("Device name"));
                 commit = r.lost_focus();
-                if has_nickname && ui.add(Button::tertiary("Use default name")).clicked() {
+                if has_nickname && ui.add(Button::tertiary(tr("Use default name"))).clicked() {
                     use_default = true;
                 }
             });
             ui.add_space(20.0);
             ui.horizontal(|ui| {
                 ui.label(
-                    egui::RichText::new("Details").text_style(Text::Subhead.style()).color(theme.color(Token::Ink2)),
+                    egui::RichText::new(tr("Details"))
+                        .text_style(Text::Subhead.style())
+                        .color(theme.color(Token::Ink2)),
                 );
                 ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                    if ui.add(Button::tertiary("Copy")).clicked() {
+                    if ui.add(Button::tertiary(tr("Copy"))).clicked() {
                         let text: String = rows.iter().map(|(k, v)| format!("{k}: {v}\n")).collect();
                         ui.ctx().copy_text(text);
                     }
@@ -239,7 +254,7 @@ impl LaApp {
             });
             ui.add_space(24.0);
             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                if ui.add(Button::primary("Close")).clicked() {
+                if ui.add(Button::primary(tr("Close"))).clicked() {
                     close = true;
                 }
             });

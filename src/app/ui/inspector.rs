@@ -7,6 +7,7 @@ use crate::app::LaApp;
 use crate::core::capture::{BUFFER_MB_MIN, BUFFER_MB_STEP, CaptureMode, TIMER_SECONDS_MIN};
 use crate::core::format::si;
 use crate::core::{ChannelId, ChannelKind};
+use crate::l10n::tr;
 use crate::ui::Token;
 use crate::ui::icons;
 use crate::ui::theme::ThemeExt;
@@ -113,7 +114,7 @@ impl LaApp {
         let builder = self.ui.inspector_window.get_or_insert_with(|| {
             let s = &self.settings.inspector;
             let b = egui::ViewportBuilder::default()
-                .with_title("Inspector")
+                .with_title(tr("Inspector"))
                 .with_min_inner_size([crate::app::settings::INSPECTOR_MIN_WIDTH, WINDOW_MIN_H]);
             match s.window {
                 Some(r) => b.with_position([r.x, r.y]).with_inner_size([r.w, r.h]),
@@ -215,8 +216,8 @@ impl LaApp {
                 ui.make_persistent_id(("inspector_tab", *id)),
                 if has_session { Sense::click() } else { Sense::hover() },
             );
-            resp.widget_info(|| WidgetInfo::selected(Role::Button, has_session, selected, *full));
-            let resp = resp.on_hover_text(format!("{full} (Alt+{key})"));
+            resp.widget_info(|| WidgetInfo::selected(Role::Button, has_session, selected, tr(full)));
+            let resp = resp.on_hover_text(format!("{} (Alt+{key})", tr(full)));
             if selected {
                 ui.painter().rect_filled(rect, 4.0, theme.color(Token::Flare));
             }
@@ -234,7 +235,7 @@ impl LaApp {
             ui.painter().text(
                 pos2(rect.center().x, rect.center().y + 7.0),
                 egui::Align2::CENTER_CENTER,
-                short,
+                tr(short),
                 font.clone(),
                 c,
             );
@@ -250,7 +251,7 @@ impl LaApp {
     fn detach_button(&mut self, ui: &mut Ui, rect: Rect) {
         let theme = ui.la_theme();
         let detached = self.settings.inspector.detached;
-        let label = if detached { "Attach Inspector" } else { "Detach Inspector" };
+        let label = tr(if detached { "Attach Inspector" } else { "Detach Inspector" });
         let resp = ui.interact(rect, ui.make_persistent_id("inspector_detach"), Sense::click());
         resp.widget_info(|| WidgetInfo::labeled(Role::Button, true, label));
         let resp = resp.on_hover_text(format!("{label} (Alt+Shift+I)"));
@@ -270,14 +271,14 @@ impl LaApp {
     fn inspector_content(&mut self, ui: &mut Ui, tab: &str) {
         let theme = ui.la_theme();
         let (title, help) = match tab {
-            DEVICE_PANEL => ("Device Settings", None),
-            super::analyzers::ANALYZERS_PANEL => ("Analyzers", None),
+            DEVICE_PANEL => (tr("Device Settings"), None),
+            super::analyzers::ANALYZERS_PANEL => (tr("Analyzers"), None),
             super::ranges::RANGES_PANEL => (
-                "Measurements",
-                Some("Measure a time range on a channel: drag across it with the measurement tool or Shift."),
+                tr("Measurements"),
+                Some(tr("Measure a time range on a channel: drag across it with the measurement tool or Shift.")),
             ),
             super::markers::MARKERS_PANEL => {
-                ("Timing Markers", Some("Mark points in time; pairs show the time between their two markers."))
+                (tr("Timing Markers"), Some(tr("Mark points in time; pairs show the time between their two markers.")))
             }
             _ => return,
         };
@@ -344,11 +345,11 @@ impl LaApp {
                     egui::TextEdit::multiline(&mut s.notes)
                         .frame(Frame::NONE)
                         .font(egui::FontId::new(14.0, Text::Prose.font_id().family))
-                        .hint_text("Click here to write a note about this capture")
+                        .hint_text(tr("Click here to write a note about this capture"))
                         .desired_width(f32::INFINITY)
                         .desired_rows(rows),
                 );
-                super::label_text_edit(&r, &s.notes, "Capture notes");
+                super::label_text_edit(&r, &s.notes, tr("Capture notes"));
             });
         });
     }
@@ -377,10 +378,10 @@ impl LaApp {
             Rect::from_center_size(egui::pos2(rect.left() + galley.size().x + 14.0, rect.center().y), vec2(20.0, 20.0));
         ui.painter().galley(rect.left_top(), galley, ink);
         let resp = ui.interact(icon, ui.make_persistent_id("device_info_icon"), Sense::click());
-        resp.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Button, true, "Device Information"));
+        resp.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Button, true, tr("Device Information")));
         let c = if resp.hovered() { Token::Ink1 } else { Token::Ink3 };
         icons::info(ui.painter(), icon.shrink(2.0), theme.color(c));
-        if resp.on_hover_text("Device Information").clicked() {
+        if resp.on_hover_text(tr("Device Information")).clicked() {
             self.ui.device_info_open = true;
         }
     }
@@ -395,7 +396,7 @@ impl LaApp {
         // A loaded file shows its settings, read-only.
         let read_only = s.is_read_only();
         if s.caps.is_none() && !read_only {
-            hint(ui, "Opening device…");
+            hint(ui, tr("Opening device…"));
             return;
         }
         let busy = s.state.is_busy() || read_only;
@@ -436,23 +437,31 @@ impl LaApp {
             // Trigger, Timed, Continuous, each with its icon.
             let segments = [
                 if digital_items.is_empty() {
-                    Segment { label: "Trigger", enabled: false, tooltip: "Enable a digital channel first." }
-                } else {
-                    Segment { label: "Trigger", enabled: true, tooltip: "Record continuously until a trigger condition is found" }
-                },
-                Segment { label: "Timed", enabled: true, tooltip: "Capture for a fixed duration" },
-                // A buffered device can't keep a rolling window.
-                if streams {
                     Segment {
-                        label: "Continuous",
-                        enabled: true,
-                        tooltip: "Continuous recording that discards the oldest data as new data arrives",
+                        label: tr("Trigger"),
+                        enabled: false,
+                        tooltip: tr("Enable a digital channel first."),
                     }
                 } else {
                     Segment {
-                        label: "Continuous",
+                        label: tr("Trigger"),
+                        enabled: true,
+                        tooltip: tr("Record continuously until a trigger condition is found"),
+                    }
+                },
+                Segment { label: tr("Timed"), enabled: true, tooltip: tr("Capture for a fixed duration") },
+                // A buffered device can't keep a rolling window.
+                if streams {
+                    Segment {
+                        label: tr("Continuous"),
+                        enabled: true,
+                        tooltip: tr("Continuous recording that discards the oldest data as new data arrives"),
+                    }
+                } else {
+                    Segment {
+                        label: tr("Continuous"),
                         enabled: false,
-                        tooltip: "This device records into its own memory and can't stream. Use Trigger or Timed.",
+                        tooltip: tr("This device records into its own memory and can't stream. Use Trigger or Timed."),
                     }
                 },
             ];
@@ -460,9 +469,9 @@ impl LaApp {
             out.mode_changed = segmented_icons(ui, "capture_mode", &segments, &icons, &mut mode_idx);
             if mode_idx == 1 {
                 ui.add_space(12.0);
-                hint(ui, "Stop recording after");
+                hint(ui, tr("Stop recording after"));
                 ui.add_space(6.0);
-                out.timer_changed = time_input(ui, "Stop recording after", &mut timer, TIMER_SECONDS_MIN);
+                out.timer_changed = time_input(ui, tr("Stop recording after"), &mut timer, TIMER_SECONDS_MIN);
             }
             if mode_idx == 0 {
                 ui.add_space(14.0);
@@ -472,34 +481,34 @@ impl LaApp {
             ui.add_space(20.0);
             divider(ui);
             if !digital_order.is_empty() {
-                out.digital = channel_grid_section(ui, "Digital", digital, &["Probe Colors…"]);
+                out.digital = channel_grid_section(ui, tr("Digital"), digital, &[tr("Probe Colors…")]);
                 ui.add_space(12.0);
-                out.rate_changed = ui.add(Dropdown::new("Sample rate", &mut rate_idx, &rate_labels)).changed();
+                out.rate_changed = ui.add(Dropdown::new(tr("Sample rate"), &mut rate_idx, &rate_labels)).changed();
                 out.threshold = super::device_opts::threshold_ui(ui, thresholds.as_ref(), threshold.as_ref());
                 ui.add_space(20.0);
             }
             if !analog_order.is_empty() {
-                out.analog = channel_grid_section(ui, "Analog", analog, &["Probe Colors…"]);
+                out.analog = channel_grid_section(ui, tr("Analog"), analog, &[tr("Probe Colors…")]);
                 ui.add_space(12.0);
                 // Libsigrok shares one rate; show it read-only here.
-                hint(ui, &format!("{rate_text} (shared with digital)"));
+                hint(ui, &tr("{} (shared with digital)").replacen("{}", &rate_text, 1));
                 ui.add_space(20.0);
             }
             if has_rle {
                 divider(ui);
                 ui.horizontal(|ui| {
-                    ui.label(egui::RichText::new("Compression (RLE)").color(theme.color(Token::Ink2)))
-                        .on_hover_text("The device compresses idle stretches in its own memory, so captures can last much longer. Busy signals still fill the memory sooner.");
+                    ui.label(egui::RichText::new(tr("Compression (RLE)")).color(theme.color(Token::Ink2)))
+                        .on_hover_text(tr("The device compresses idle stretches in its own memory, so captures can last much longer. Busy signals still fill the memory sooner."));
                     ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                        out.rle_changed = ui.add(BinarySwitch::new(&mut rle, "Compression (RLE)")).changed();
+                        out.rle_changed = ui.add(BinarySwitch::new(&mut rle, tr("Compression (RLE)"))).changed();
                     });
                 });
                 ui.add_space(20.0);
             }
             divider(ui);
-            section_title(ui, "Memory buffer size");
+            section_title(ui, tr("Memory buffer size"));
             ui.add_space(8.0);
-            out.step = stepper(ui, "Memory buffer size", &buffer_label(buffer_mb), buffer_mb > BUFFER_MB_MIN, true);
+            out.step = stepper(ui, tr("Memory buffer size"), &buffer_label(buffer_mb), buffer_mb > BUFFER_MB_MIN, true);
             ui.add_space(20.0);
             out
         });
@@ -508,9 +517,11 @@ impl LaApp {
             && ui.interact(area.response.rect, ui.make_persistent_id("device_area_blocker"), Sense::click()).clicked()
         {
             let msg = if read_only {
-                "These are the settings the capture was recorded with. Press Record to capture with them; the banner chooses where."
+                tr(
+                    "These are the settings the capture was recorded with. Press Record to capture with them; the banner chooses where.",
+                )
             } else {
-                "Settings lock while recording."
+                tr("Settings lock while recording.")
             };
             self.toast(Toast::new(ToastKind::Info, msg).id("settings-disabled"));
         }

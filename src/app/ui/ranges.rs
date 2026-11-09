@@ -10,6 +10,7 @@ use crate::core::markers::{SNAP_PT, snap_x};
 use crate::core::ranges::{Metric, RANGE_COLORS};
 use crate::core::{CaptureTime, ChannelId, ChannelKind, ViewState};
 use crate::engine::measure::{analog_metrics, digital_metrics, metric_value};
+use crate::l10n::tr;
 use crate::ui::Token;
 use crate::ui::icons;
 use crate::ui::theme::ThemeExt;
@@ -54,7 +55,7 @@ pub(crate) type MetricCache =
 /// integers; `N/A` when it can't be computed.
 pub(crate) fn metric_text(m: Metric, v: Option<f64>) -> String {
     match v {
-        None => "N/A".into(),
+        None => tr("N/A").into(),
         Some(v) => match m {
             Metric::NRising | Metric::NFalling => count(v as u64),
             Metric::Duty => format!("{} %", si_sig(v, "", 7).trim_end()),
@@ -67,7 +68,7 @@ pub(crate) fn metric_text(m: Metric, v: Option<f64>) -> String {
 pub(crate) fn metrics_tsv(values: &[(Metric, Option<f64>)]) -> String {
     values
         .iter()
-        .map(|(m, v)| format!("{}\t{}\t{}", m.plain_label(), v.map_or("N/A".into(), |v| format!("{v}")), m.unit()))
+        .map(|(m, v)| format!("{}\t{}\t{}", m.plain_label(), v.map_or(tr("N/A").into(), |v| format!("{v}")), m.unit()))
         .collect::<Vec<_>>()
         .join("\n")
 }
@@ -309,7 +310,11 @@ impl LaApp {
                 let hit = Rect::from_x_y_ranges(x - EDGE_GRAB..=x + EDGE_GRAB, g.inner.y_range());
                 let e = ui.interact(hit, ui.make_persistent_id(("range_edge", id, end)), Sense::drag());
                 e.widget_info(|| {
-                    WidgetInfo::labeled(Role::Splitter, true, format!("{name} {}", if end { "end" } else { "begin" }))
+                    WidgetInfo::labeled(
+                        Role::Splitter,
+                        true,
+                        format!("{name} {}", if end { tr("end") } else { tr("begin") }),
+                    )
                 });
                 if e.hovered() || e.dragged() {
                     ui.ctx().set_cursor_icon(egui::CursorIcon::ResizeColumn);
@@ -455,22 +460,22 @@ impl LaApp {
                                 .desired_width(140.0)
                                 .hint_text(format!("M{}", r.id)),
                         );
-                        super::label_text_edit(&name_resp, &name, "Range name");
+                        super::label_text_edit(&name_resp, &name, tr("Range name"));
                         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                            if icon_button(ui, "Export this range's data", icons::export)
-                                .on_hover_text("Export this range's data")
+                            if icon_button(ui, tr("Export this range's data"), icons::export)
+                                .on_hover_text(tr("Export this range's data"))
                                 .clicked()
                             {
                                 export = true;
                             }
-                            if icon_button(ui, "Copy", icons::copy).on_hover_text("Copy").clicked() {
+                            if icon_button(ui, tr("Copy"), icons::copy).on_hover_text(tr("Copy")).clicked() {
                                 copy = true;
                             }
                             if copied {
-                                ui.label(egui::RichText::new("Copied!").color(theme.color(Token::Good)));
+                                ui.label(egui::RichText::new(tr("Copied!")).color(theme.color(Token::Good)));
                             }
-                            let add = icon_button(ui, "Add or Remove Measurements", icons::plus)
-                                .on_hover_text("Add or Remove Measurements");
+                            let add = icon_button(ui, tr("Add or Remove Measurements"), icons::plus)
+                                .on_hover_text(tr("Add or Remove Measurements"));
                             Popup::menu(&add)
                                 .close_behavior(PopupCloseBehavior::CloseOnClickOutside)
                                 .frame(popover_frame(ui))
@@ -496,15 +501,20 @@ impl LaApp {
                         egui::TextEdit::multiline(&mut comment)
                             .desired_rows(2)
                             .desired_width(f32::INFINITY)
-                            .hint_text("Comments ..."),
+                            .hint_text(tr("Comments ...")),
                     );
-                    super::label_text_edit(&c, &comment, "Range comment");
+                    super::label_text_edit(&c, &comment, tr("Range comment"));
                     ui.add_space(8.0);
                     ui.horizontal(|ui| {
                         for (k, rgb) in RANGE_COLORS.iter().enumerate() {
                             let (rect, resp) = ui.allocate_exact_size(vec2(18.0, 18.0), Sense::click());
                             resp.widget_info(|| {
-                                WidgetInfo::selected(Role::Button, true, k == color, format!("Range color {}", k + 1))
+                                WidgetInfo::selected(
+                                    Role::Button,
+                                    true,
+                                    k == color,
+                                    tr("Range color {}").replacen("{}", &(k + 1).to_string(), 1),
+                                )
                             });
                             ui.painter().rect_filled(rect, 3.0, c32(*rgb));
                             if k == color {
@@ -515,7 +525,10 @@ impl LaApp {
                             }
                         }
                         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                            if icon_button(ui, "Delete measurement", icons::trash).on_hover_text("Delete").clicked() {
+                            if icon_button(ui, tr("Delete measurement"), icons::trash)
+                                .on_hover_text(tr("Delete"))
+                                .clicked()
+                            {
                                 delete = true;
                             }
                         });

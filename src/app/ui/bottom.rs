@@ -61,8 +61,8 @@ impl LaApp {
         }
         let restore =
             ui.interact(bars.expand2(vec2(0.0, 4.0)), ui.make_persistent_id("progress_restore"), Sense::click());
-        restore.widget_info(|| WidgetInfo::labeled(Role::Button, true, "Show capture progress"));
-        if restore.on_hover_text("Show capture progress").clicked() {
+        restore.widget_info(|| WidgetInfo::labeled(Role::Button, true, crate::l10n::tr("Show capture progress")));
+        if restore.on_hover_text(crate::l10n::tr("Show capture progress")).clicked() {
             self.ui.progress_minimized = false;
         }
     }
@@ -72,9 +72,9 @@ impl LaApp {
         let devices = self.devices.clone().unwrap_or_default();
         let physical = devices.iter().filter(|d| !d.is_demo).count();
         let label = match physical {
-            0 => "Disconnected".to_owned(),
-            1 => "1 Device".to_owned(),
-            n => format!("{n} Devices"),
+            0 => crate::l10n::tr("Disconnected").to_owned(),
+            1 => crate::l10n::tr("1 Device").to_owned(),
+            n => crate::l10n::tr("{} Devices").replacen("{}", &n.to_string(), 1),
         };
         let icon: Option<fn(&egui::Painter, Rect, egui::Color32)> =
             (physical > 0).then_some(icons::device as fn(&_, _, _));
@@ -100,7 +100,10 @@ impl LaApp {
             .frame(popover_frame(ui))
             .width(340.0)
             .show(|ui| {
-                menu_title(ui, if physical == 0 { "Demo Devices" } else { "Connected Devices" });
+                menu_title(
+                    ui,
+                    if physical == 0 { crate::l10n::tr("Demo Devices") } else { crate::l10n::tr("Connected Devices") },
+                );
                 for d in &devices {
                     ui.horizontal(|ui| {
                         ui.set_height(56.0);
@@ -109,7 +112,11 @@ impl LaApp {
                         icons::device(ui.painter(), g, theme.color(Token::Ink2));
                         if active.as_ref() == Some(&d.id) {
                             glyph.widget_info(|| {
-                                egui::WidgetInfo::labeled(egui::Role::Image, true, "Active session's device")
+                                egui::WidgetInfo::labeled(
+                                    egui::Role::Image,
+                                    true,
+                                    crate::l10n::tr("Active session's device"),
+                                )
                             });
                             // Check badge: this device belongs to the active session.
                             let c = pos2(g.right() - 2.0, g.bottom() - 4.0);
@@ -128,7 +135,7 @@ impl LaApp {
                         );
                         ui.with_layout(Layout::right_to_left(egui::Align::Center), |ui| {
                             ui.add_space(12.0);
-                            if ui.add(Button::tertiary("New Session")).clicked() {
+                            if ui.add(Button::tertiary(crate::l10n::tr("New Session"))).clicked() {
                                 open = Some(d.clone());
                             }
                         });
@@ -141,13 +148,13 @@ impl LaApp {
                         ui.set_height(40.0);
                         ui.add_space(12.0);
                         ui.label(
-                            egui::RichText::new("A device needs firmware")
+                            egui::RichText::new(crate::l10n::tr("A device needs firmware"))
                                 .text_style(Text::Prose.style())
                                 .color(theme.color(Token::Caution)),
                         );
                         ui.with_layout(Layout::right_to_left(egui::Align::Center), |ui| {
                             ui.add_space(12.0);
-                            if ui.add(Button::tertiary("Install…")).clicked() {
+                            if ui.add(Button::tertiary(crate::l10n::tr("Install…"))).clicked() {
                                 install = Some(m.file.clone());
                             }
                         });
@@ -155,7 +162,7 @@ impl LaApp {
                 }
                 // The last row.
                 crate::ui::widgets::menu_separator(ui);
-                if crate::ui::widgets::menu_item(ui, "Device Connection Help ›", None).clicked() {
+                if crate::ui::widgets::menu_item(ui, crate::l10n::tr("Device Connection Help ›"), None).clicked() {
                     help = true;
                 }
             });
@@ -191,14 +198,14 @@ impl LaApp {
             .frame(popover_frame(ui))
             .width(220.0)
             .show(|ui| {
-                menu_title(ui, "Time Range");
+                menu_title(ui, crate::l10n::tr("Time Range"));
                 ui.horizontal(|ui| {
                     ui.add_space(12.0);
                     let edit = egui::TextEdit::singleline(&mut self.ui.zoom_text)
                         .desired_width(ui.available_width() - 12.0)
                         .font(Text::Prose.font_id());
                     let r = ui.add(edit);
-                    super::label_text_edit(&r, &self.ui.zoom_text, "Time Range");
+                    super::label_text_edit(&r, &self.ui.zoom_text, crate::l10n::tr("Time Range"));
                     if !was_open {
                         r.request_focus();
                     }
@@ -208,7 +215,7 @@ impl LaApp {
                 });
                 if !recents.is_empty() {
                     ui.add_space(4.0);
-                    menu_title(ui, "Recent Zooms");
+                    menu_title(ui, crate::l10n::tr("Recent Zooms"));
                     for z in &recents {
                         if menu_item(ui, &zoom_label(*z), None).clicked() {
                             recent = Some(*z);
@@ -216,10 +223,10 @@ impl LaApp {
                     }
                 }
                 menu_separator(ui);
-                if menu_item(ui, "Zoom In", Some("=")).clicked() {
+                if menu_item(ui, crate::l10n::tr("Zoom In"), Some("=")).clicked() {
                     zoom = Some(0.5);
                 }
-                if menu_item(ui, "Zoom Out", Some("-")).clicked() {
+                if menu_item(ui, crate::l10n::tr("Zoom Out"), Some("-")).clicked() {
                     zoom = Some(2.0);
                 }
             });
@@ -252,7 +259,7 @@ impl LaApp {
         let Some(s) = self.session.as_ref() else { return };
         let theme = ui.la_theme();
         let (rect, resp) = ui.allocate_exact_size(vec2(40.0, ui.available_height()), Sense::click());
-        resp.widget_info(|| WidgetInfo::labeled(Role::Button, true, "Notes"));
+        resp.widget_info(|| WidgetInfo::labeled(Role::Button, true, crate::l10n::tr("Notes")));
         let open = self.ui.notes_panel_open;
         let p = ui.painter();
         if open {
@@ -269,7 +276,7 @@ impl LaApp {
         if !s.notes.trim().is_empty() {
             p.circle_filled(pos2(rect.right() - 8.0, rect.top() + 8.0), 3.0, theme.color(Token::Ink2));
         }
-        if resp.on_hover_text("Notes (Alt+5)").clicked() {
+        if resp.on_hover_text(crate::l10n::tr("Notes (Alt+5)")).clicked() {
             self.toggle_notes_panel();
         }
     }
@@ -297,20 +304,23 @@ impl LaApp {
                     ui.set_height(30.0);
                     ui.add_space(16.0);
                     ui.label(
-                        egui::RichText::new("Notes").text_style(Text::Headline.style()).color(theme.color(Token::Ink1)),
+                        egui::RichText::new(crate::l10n::tr("Notes"))
+                            .text_style(Text::Headline.style())
+                            .color(theme.color(Token::Ink1)),
                     )
-                    .on_hover_text("Free-form notes saved with the capture");
+                    .on_hover_text(crate::l10n::tr("Free-form notes saved with the capture"));
                     ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                         ui.add_space(8.0);
                         let (close_rect, close_resp) = ui.allocate_exact_size(vec2(24.0, 24.0), Sense::click());
-                        close_resp.widget_info(|| WidgetInfo::labeled(Role::Button, true, "Close Notes"));
+                        close_resp
+                            .widget_info(|| WidgetInfo::labeled(Role::Button, true, crate::l10n::tr("Close Notes")));
                         let color = theme.color(if close_resp.hovered() { Token::Ink1 } else { Token::Ink3 });
                         icons::close(
                             ui.painter(),
                             Rect::from_center_size(close_rect.center(), vec2(14.0, 14.0)),
                             color,
                         );
-                        if close_resp.on_hover_text("Close Notes").clicked() {
+                        if close_resp.on_hover_text(crate::l10n::tr("Close Notes")).clicked() {
                             self.ui.notes_panel_open = false;
                         }
                     });

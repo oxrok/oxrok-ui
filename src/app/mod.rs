@@ -463,6 +463,7 @@ impl LaApp {
     pub fn with_options(cc: &eframe::CreationContext<'_>, o: AppOptions) -> Self {
         let ctx = cc.egui_ctx.clone();
         let (settings, settings_backup) = o.settings_path.as_deref().map(AppSettings::load).unwrap_or_default();
+        crate::l10n::set(settings.language);
         let theme_kind = settings.appearance.theme.resolve(ctx.system_theme());
         crate::ui::install(&ctx, theme_kind.theme());
         // The UI size keys are commands, not egui's own zoom keys.
@@ -515,7 +516,8 @@ impl LaApp {
             app.toast(
                 Toast::new(
                     ToastKind::Warning,
-                    format!("Settings were reset. The previous file could not be used and was kept as {name}."),
+                    crate::l10n::tr("Settings were reset. The previous file could not be used and was kept as {}.")
+                        .replacen("{}", &name, 1),
                 )
                 .id("settings-reset")
                 .action(action),
@@ -523,7 +525,10 @@ impl LaApp {
         }
         // Report probe profiles that failed to load.
         for (file, err) in app.profiles.errors.clone() {
-            app.toast(Toast::new(ToastKind::Warning, format!("{file}: {err}")).heading("Probe profile skipped"));
+            app.toast(
+                Toast::new(ToastKind::Warning, format!("{file}: {err}"))
+                    .heading(crate::l10n::tr("Probe profile skipped")),
+            );
         }
         app.ui.ctx = ctx;
         app.rescan_devices();
@@ -630,7 +635,7 @@ impl LaApp {
     /// Start (Continuous mode only in 0.1.0).
     pub(crate) fn start_capture(&mut self, ctx: &egui::Context) {
         let Some(s) = self.session.as_mut() else {
-            self.toast(Toast::new(ToastKind::Error, "Recording needs a device. Pick one to begin."));
+            self.toast(Toast::new(ToastKind::Error, crate::l10n::tr("Recording needs a device. Pick one to begin.")));
             return;
         };
         if s.state.is_busy() {
@@ -660,25 +665,25 @@ impl LaApp {
                 return;
             }
             self.toast(
-                Toast::new(ToastKind::Info, "Previous capture replaced")
+                Toast::new(ToastKind::Info, crate::l10n::tr("Previous capture replaced"))
                     .id("replaced")
                     .lifetime(Duration::from_secs(4)),
             );
         }
         let Some(s) = self.session.as_mut() else { return };
         if s.caps.is_none() {
-            let msg = s.open_error.clone().unwrap_or_else(|| "Switching device…".into());
+            let msg = s.open_error.clone().unwrap_or_else(|| crate::l10n::tr("Switching device…").into());
             self.toast(Toast::new(ToastKind::Error, msg));
             return;
         }
         let enabled = s.settings.enabled.clone();
         if enabled.is_empty() {
-            self.toast(Toast::new(ToastKind::Error, "Enable at least one channel to record."));
+            self.toast(Toast::new(ToastKind::Error, crate::l10n::tr("Enable at least one channel to record.")));
             return;
         }
         let triggered = s.settings.mode == CaptureMode::Triggered;
         if triggered && !s.settings.trigger.is_valid(&enabled) {
-            self.toast(Toast::new(ToastKind::Error, "The digital trigger setup is invalid."));
+            self.toast(Toast::new(ToastKind::Error, crate::l10n::tr("The digital trigger setup is invalid.")));
             return;
         }
         s.reset_annotations();
@@ -1001,10 +1006,8 @@ impl LaApp {
             if *took > every {
                 s.pins_slow_reads = s.pins_slow_reads.saturating_add(1);
                 if s.pins_slow_reads == PINS_SLOW_READS_NOTICE && pins_interval(every, s.pins_slow_reads) > every {
-                    let msg = format!(
-                        "Wire status reads take {} on this device; polling less often.",
-                        crate::core::format::time_short(took.as_secs_f64())
-                    );
+                    let msg = crate::l10n::tr("Wire status reads take {} on this device; polling less often.")
+                        .replacen("{}", &crate::core::format::time_short(took.as_secs_f64()), 1);
                     self.toast(Toast::new(ToastKind::Info, msg).id("wire-status-slow"));
                 }
             } else {
@@ -1023,7 +1026,7 @@ impl LaApp {
                     if let Some(p) = s.pins.as_mut() {
                         p.stale = true;
                     }
-                    let msg = format!("Wire status stopped: {e}");
+                    let msg = crate::l10n::tr("Wire status stopped: {}").replacen("{}", e, 1);
                     self.toast(Toast::new(ToastKind::Warning, msg).id("wire-status"));
                 }
             }
@@ -1060,7 +1063,7 @@ impl LaApp {
                 }
                 Err(e) => {
                     self.session.as_mut().unwrap().open_error = Some(e.clone());
-                    self.toast(Toast::new(ToastKind::Error, e).heading("Failed to open device"));
+                    self.toast(Toast::new(ToastKind::Error, e).heading(crate::l10n::tr("Failed to open device")));
                 }
             },
             WorkerEvent::Started { session, result } if Some(session) == current => match result {
@@ -1075,7 +1078,10 @@ impl LaApp {
                     }
                     if applied.sample_rate != requested {
                         let rate = crate::core::format::sample_rate(applied.sample_rate as f64);
-                        self.toast(Toast::new(ToastKind::Info, format!("Sample rate adjusted to {rate}")));
+                        self.toast(Toast::new(
+                            ToastKind::Info,
+                            crate::l10n::tr("Sample rate adjusted to {}").replacen("{}", &rate, 1),
+                        ));
                     }
                     self.on_applied(applied);
                 }
@@ -1083,7 +1089,9 @@ impl LaApp {
                     // A later round that fails ends the run, keeping the last one.
                     if self.restore_previous() {
                         self.session.as_mut().unwrap().repeat = None;
-                        self.toast(Toast::new(ToastKind::Error, e).heading("Could not begin the capture."));
+                        self.toast(
+                            Toast::new(ToastKind::Error, e).heading(crate::l10n::tr("Could not begin the capture.")),
+                        );
                         return;
                     }
                     let s = self.session.as_mut().unwrap();
@@ -1094,13 +1102,16 @@ impl LaApp {
                     // Drivers may refuse compression at high rates,
                     // with an error that doesn't say so.
                     let e = if s.snapshot.as_ref().is_some_and(|snap| snap.rle) {
-                        format!(
-                            "{e}\nTry disabling Compression (RLE), as some devices don't support it at higher sample rates."
-                        )
+                        let hint = crate::l10n::tr(
+                            "Try disabling Compression (RLE), as some devices don't support it at higher sample rates.",
+                        );
+                        format!("{e}\n{hint}")
                     } else {
                         e
                     };
-                    self.toast(Toast::new(ToastKind::Error, e).heading("Could not begin the capture."));
+                    self.toast(
+                        Toast::new(ToastKind::Error, e).heading(crate::l10n::tr("Could not begin the capture.")),
+                    );
                 }
             },
             WorkerEvent::Stopped { session }
@@ -1128,12 +1139,12 @@ impl LaApp {
         };
         if let Some(reason) = stop_request {
             let msg = match reason {
-                StopReason::BufferFull => {
-                    "The capture stopped at the memory buffer limit. Raise the buffer in Device Settings to go longer."
-                }
-                StopReason::Backlog => {
-                    "Capture stopped because unprocessed data exceeded 90 % of the buffer. Try a lower sample rate or fewer channels."
-                }
+                StopReason::BufferFull => crate::l10n::tr(
+                    "The capture stopped at the memory buffer limit. Raise the buffer in Device Settings to go longer.",
+                ),
+                StopReason::Backlog => crate::l10n::tr(
+                    "Capture stopped because unprocessed data exceeded 90 % of the buffer. Try a lower sample rate or fewer channels.",
+                ),
             };
             self.toast(Toast::new(ToastKind::Error, msg).id("memory-stop"));
             self.stop_capture();
@@ -1172,10 +1183,13 @@ impl LaApp {
                 self.mark_auto_end();
             }
             match reason {
-                EndReason::Error(e) => self.toast(Toast::new(ToastKind::Error, e).heading("Capture error")),
-                EndReason::Disconnected => {
-                    self.toast(Toast::new(ToastKind::Error, "The device dropped. Reconnect it or start a new session."))
+                EndReason::Error(e) => {
+                    self.toast(Toast::new(ToastKind::Error, e).heading(crate::l10n::tr("Capture error")))
                 }
+                EndReason::Disconnected => self.toast(Toast::new(
+                    ToastKind::Error,
+                    crate::l10n::tr("The device dropped. Reconnect it or start a new session."),
+                )),
                 EndReason::Completed | EndReason::Stopped => {}
             }
             // Let the worker join the acquisition; its `Stopped` event finishes the capture.
@@ -1255,19 +1269,20 @@ impl LaApp {
             return;
         }
         let duration = crate::core::format::time_short(got as f64 / snap.sample_rate as f64);
-        let head =
-            format!("The device's memory filled after {duration} ({} samples).", crate::core::format::count(got));
+        let head = crate::l10n::tr("The device's memory filled after {} ({} samples).")
+            .replacen("{}", &duration, 1)
+            .replacen("{}", &crate::core::format::count(got), 1);
         let rle_available = s.caps.as_ref().is_some_and(|c| c.rle);
         // A note, not advice: the user may have turned compression off
         // because the device refuses it at this rate.
         let advice = if rle_available && !snap.rle {
-            "Compression (RLE) was off."
+            crate::l10n::tr("Compression (RLE) was off.")
         } else {
-            "Lower the sample rate or shorten the capture."
+            crate::l10n::tr("Lower the sample rate or shorten the capture.")
         };
         self.toast(
             Toast::new(ToastKind::Warning, format!("{head} {advice}"))
-                .heading("Capture ended early")
+                .heading(crate::l10n::tr("Capture ended early"))
                 .id("short-capture"),
         );
     }
@@ -1488,10 +1503,14 @@ impl LaApp {
         if let Some(s) = self.session.as_mut() {
             s.range_history.record(crate::core::ranges::RangeOp::Delete(removed));
         }
-        let body = if n == 1 { "1 measurement deleted".into() } else { format!("{n} measurements deleted") };
+        let body = if n == 1 {
+            crate::l10n::tr("1 measurement deleted").into()
+        } else {
+            crate::l10n::tr("{} measurements deleted").replacen("{}", &n.to_string(), 1)
+        };
         self.toast(
             Toast::new(ToastKind::Info, body)
-                .heading("Deleted")
+                .heading(crate::l10n::tr("Deleted"))
                 .action("Undo")
                 .id("range-deleted")
                 .lifetime(Duration::from_secs(5)),
@@ -1675,16 +1694,22 @@ impl LaApp {
                     }
                 }
                 AppEvent::ExportDone(Ok((path, rows))) => {
-                    let body = format!("{} ({} rows)", path.display(), crate::core::format::count(rows));
+                    let body = crate::l10n::tr("{} ({} rows)").replacen("{}", &path.display().to_string(), 1).replacen(
+                        "{}",
+                        &crate::core::format::count(rows),
+                        1,
+                    );
                     self.ui.reveal.insert("export-done".into(), path);
                     self.toast(
                         Toast::new(ToastKind::Success, body)
-                            .heading("Export complete")
+                            .heading(crate::l10n::tr("Export complete"))
                             .id("export-done")
                             .action("Show in Folder"),
                     );
                 }
-                AppEvent::ExportDone(Err(e)) => self.toast(Toast::new(ToastKind::Error, e).heading("Export failed")),
+                AppEvent::ExportDone(Err(e)) => {
+                    self.toast(Toast::new(ToastKind::Error, e).heading(crate::l10n::tr("Export failed")))
+                }
                 AppEvent::TableExportFile(lines, Some(path)) => self.write_table_export(lines, path),
                 AppEvent::TableExportFile(_, None) => {}
                 AppEvent::Connected(spec, r) => self.on_connected(spec, r),
@@ -1701,11 +1726,11 @@ impl LaApp {
             None => APP_NAME.to_owned(),
             Some(s) => {
                 let state = if s.is_read_only() {
-                    "File"
+                    crate::l10n::tr("File")
                 } else if s.device.is_demo {
-                    "Demo"
+                    crate::l10n::tr("Demo")
                 } else {
-                    "Connected"
+                    crate::l10n::tr("Connected")
                 };
                 // `• ` marks an unsaved capture.
                 let mark = if s.is_unsaved() { "• " } else { "" };
@@ -1729,7 +1754,9 @@ impl LaApp {
         if let Some(path) = &self.settings_path
             && let Err(e) = self.settings.save(path)
         {
-            self.toast(Toast::new(ToastKind::Warning, e.to_string()).heading("Could not save settings"));
+            self.toast(
+                Toast::new(ToastKind::Warning, e.to_string()).heading(crate::l10n::tr("Could not save settings")),
+            );
         }
     }
 }

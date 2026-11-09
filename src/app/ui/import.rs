@@ -5,6 +5,7 @@
 use super::dialogs::modal_frame;
 use crate::app::LaApp;
 use crate::backend::{ImportFormat, InputOption, InputOptionKind, OptionValue};
+use crate::l10n::tr;
 use crate::ui::Token;
 use crate::ui::theme::ThemeExt;
 use crate::ui::typography::Text;
@@ -100,7 +101,7 @@ impl LaApp {
                 ui.set_width(520.0);
                 Frame::new().inner_margin(Margin::same(32)).show(ui, |ui| {
                     ui.label(
-                        egui::RichText::new(format!("Import {name}"))
+                        egui::RichText::new(tr("Import {}").replacen("{}", &name, 1))
                             .text_style(Text::Display.style())
                             .color(theme.color(Token::Ink1)),
                     );
@@ -115,10 +116,10 @@ impl LaApp {
                             }
                         };
                         if d.choose_format {
-                            label(ui, "Format", "This file's format couldn't be recognized; pick it here.");
+                            label(ui, tr("Format"), tr("This file's format couldn't be recognized; pick it here."));
                             ui.vertical(|ui| {
                                 ui.set_width(260.0);
-                                ui.add(Dropdown::new("Format", &mut format_idx, &format_labels));
+                                ui.add(Dropdown::new(tr("Format"), &mut format_idx, &format_labels));
                             });
                             ui.end_row();
                         }
@@ -156,7 +157,7 @@ impl LaApp {
                         }
                         if options.is_empty() {
                             ui.label(
-                                egui::RichText::new("This format has no options.").color(theme.color(Token::Ink3)),
+                                egui::RichText::new(tr("This format has no options.")).color(theme.color(Token::Ink3)),
                             );
                             ui.end_row();
                         }
@@ -166,8 +167,12 @@ impl LaApp {
                         let names: Vec<&str> =
                             options.iter().filter(|o| invalid.contains(&o.id)).map(|o| o.name.as_str()).collect();
                         ui.label(
-                            egui::RichText::new(format!("! Enter a valid value for: {}", names.join(", ")))
-                                .color(theme.color(Token::Alert)),
+                            egui::RichText::new(tr("! Enter a valid value for: {}").replacen(
+                                "{}",
+                                &names.join(", "),
+                                1,
+                            ))
+                            .color(theme.color(Token::Alert)),
                         );
                     }
                 });
@@ -175,15 +180,15 @@ impl LaApp {
                 Frame::new().inner_margin(Margin::same(24)).show(ui, |ui| {
                     let row = vec2(ui.available_width(), 40.0);
                     ui.allocate_ui_with_layout(row, egui::Layout::left_to_right(egui::Align::Center), |ui| {
-                        if ui.add(Button::secondary("Reset")).clicked() {
+                        if ui.add(Button::secondary(tr("Reset"))).clicked() {
                             reset = true;
                         }
                         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                            if ui.add_enabled(invalid.is_empty(), Button::primary("Import")).clicked() {
+                            if ui.add_enabled(invalid.is_empty(), Button::primary(tr("Import"))).clicked() {
                                 import = true;
                             }
                             ui.add_space(8.0);
-                            if ui.add(Button::secondary("Cancel")).clicked() {
+                            if ui.add(Button::secondary(tr("Cancel"))).clicked() {
                                 cancel = true;
                             }
                         });

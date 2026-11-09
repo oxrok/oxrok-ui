@@ -124,4 +124,5 @@ GPL-3.0-or-later (see [`LICENSE`](LICENSE)), matching oxrok, which ports
 the GPL sigrok code.
 
 Bundled fonts keep their own license, the SIL Open Font License 1.1:
-Inter and JetBrains Mono, under `assets/fonts/`.
+Inter, JetBrains Mono and subsets of Noto Sans SC (for Chinese; `make
+cjk-font` rebuilds them), under `assets/fonts/`.

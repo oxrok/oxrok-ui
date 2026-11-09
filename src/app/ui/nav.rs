@@ -10,6 +10,7 @@ use crate::core::animator::{Anchor, FLING_TAU, JUMP_DURATION, ViewRequest};
 use crate::core::format::{TimeUnit, parse_time, time_short};
 use crate::core::history::ViewEntry;
 use crate::core::{CaptureTime, ChannelId, ChannelKind, ViewState};
+use crate::l10n::tr;
 use crate::ui::Token;
 use crate::ui::icons;
 use crate::ui::theme::ThemeExt;
@@ -126,16 +127,16 @@ impl LaApp {
         let mode = self.settings.marquee_mode;
         let armed = self.ui.zoom_tool_armed;
         let main = item(CAPTURE_ITEM_W);
-        let resp = tool_button(ui, main, "Zoom Tool", true, armed, |p, r, c| match mode {
+        let resp = tool_button(ui, main, tr("Zoom Tool"), true, armed, |p, r, c| match mode {
             MarqueeMode::X => icons::zoom_x(p, r, c),
             MarqueeMode::Y => icons::zoom_y(p, r, c),
             MarqueeMode::XY => icons::zoom_xy(p, r, c),
         });
-        if resp.on_hover_text(format!("{} (click, then drag on the graph)", mode_name(mode))).clicked() {
+        if resp.on_hover_text(tr("{} (click, then drag on the graph)").replacen("{}", mode_name(mode), 1)).clicked() {
             self.ui.zoom_tool_armed = !armed;
         }
         let chevron = item(CHEVRON_W);
-        let resp = tool_button(ui, chevron, "Zoom Tool Options", true, false, icons::chevron_down);
+        let resp = tool_button(ui, chevron, tr("Zoom Tool Options"), true, false, icons::chevron_down);
         let mut pick = None;
         let mut relative = self.settings.waveform.zoom_relative_to;
         Popup::from_toggle_button_response(&resp)
@@ -154,13 +155,13 @@ impl LaApp {
                     }
                 }
                 menu_separator(ui);
-                menu_title(ui, "Zoom relative to…");
+                menu_title(ui, tr("Zoom relative to…"));
                 ui.horizontal(|ui| {
                     ui.add_space(12.0);
                     ui.set_width(276.0);
                     let segments = [
-                        Segment { label: "Center", enabled: true, tooltip: "Zoom about the view center" },
-                        Segment { label: "Mouse", enabled: true, tooltip: "Zoom about the pointer" },
+                        Segment { label: tr("Center"), enabled: true, tooltip: tr("Zoom about the view center") },
+                        Segment { label: tr("Mouse"), enabled: true, tooltip: tr("Zoom about the pointer") },
                     ];
                     let mut idx = usize::from(relative == RelativeZoom::Mouse);
                     if segmented(ui, "relative_zoom", &segments, &mut idx) {
@@ -180,13 +181,13 @@ impl LaApp {
             self.mark_settings_dirty();
         }
         let back = item(CAPTURE_ITEM_W);
-        let resp = tool_button(ui, back, "Previous view", can_back, false, icons::chevron_left);
-        if resp.on_hover_text(format!("Previous view ({})", history_keys(false))).clicked() {
+        let resp = tool_button(ui, back, tr("Previous view"), can_back, false, icons::chevron_left);
+        if resp.on_hover_text(tr("Previous view ({})").replacen("{}", &history_keys(false), 1)).clicked() {
             self.history_step(false);
         }
         let forward = item(CAPTURE_ITEM_W);
-        let resp = tool_button(ui, forward, "Next view", can_forward, false, icons::chevron_right);
-        if resp.on_hover_text(format!("Next view ({})", history_keys(true))).clicked() {
+        let resp = tool_button(ui, forward, tr("Next view"), can_forward, false, icons::chevron_right);
+        if resp.on_hover_text(tr("Next view ({})").replacen("{}", &history_keys(true), 1)).clicked() {
             self.history_step(true);
         }
     }
@@ -265,7 +266,7 @@ impl LaApp {
                 popover_frame(ui).inner_margin(egui::Margin::same(12)).show(ui, |ui| {
                     ui.set_width(JUMP_W - 24.0);
                     ui.label(
-                        egui::RichText::new("Jump to Time")
+                        egui::RichText::new(tr("Jump to Time"))
                             .text_style(Text::Lead.style())
                             .color(theme.color(Token::Ink1)),
                     );
@@ -273,10 +274,10 @@ impl LaApp {
                     let r = ui.add(
                         egui::TextEdit::singleline(&mut text)
                             .desired_width(f32::INFINITY)
-                            .hint_text("e.g. 10ms")
+                            .hint_text(tr("e.g. 10ms"))
                             .font(Text::Prose.font_id()),
                     );
-                    label_text_edit(&r, &text, "Jump to Time");
+                    label_text_edit(&r, &text, tr("Jump to Time"));
                     if opening {
                         r.request_focus();
                     }
@@ -290,9 +291,15 @@ impl LaApp {
                     }
                     ui.add_space(6.0);
                     let (msg, color) = if self.ui.jump_error {
-                        (format!("Value must be between {lo} and {hi}."), Token::Alert)
+                        (
+                            tr("Value must be between {} and {}.").replacen("{}", &lo, 1).replacen("{}", &hi, 1),
+                            Token::Alert,
+                        )
                     } else {
-                        (format!("Type a value between: {lo} to {hi}"), Token::Ink3)
+                        (
+                            tr("Type a value between: {} to {}").replacen("{}", &lo, 1).replacen("{}", &hi, 1),
+                            Token::Ink3,
+                        )
                     };
                     ui.label(egui::RichText::new(msg).text_style(Text::CaptionMed.style()).color(theme.color(color)));
                 });
@@ -368,7 +375,7 @@ impl LaApp {
             let x = if next { cell.right() - 6.0 - EDGE_BUTTON } else { cell.left() + 6.0 };
             let size = EDGE_BUTTON.min(cell.height() - 2.0);
             let r = Rect::from_min_size(pos2(x, cell.center().y - size / 2.0), vec2(size, size));
-            let label = if next { "Next Edge" } else { "Previous Edge" };
+            let label = if next { tr("Next Edge") } else { tr("Previous Edge") };
             let resp = ui.interact(r, ui.make_persistent_id(("edge", id, next)), Sense::click());
             resp.widget_info(|| WidgetInfo::labeled(Role::Button, true, label));
             let theme = ui.la_theme();
@@ -396,9 +403,9 @@ impl LaApp {
 
 fn mode_name(m: MarqueeMode) -> &'static str {
     match m {
-        MarqueeMode::X => "X Range Zoom",
-        MarqueeMode::Y => "Y Range Zoom",
-        MarqueeMode::XY => "XY Range Zoom",
+        MarqueeMode::X => tr("X Range Zoom"),
+        MarqueeMode::Y => tr("Y Range Zoom"),
+        MarqueeMode::XY => tr("XY Range Zoom"),
     }
 }
 
@@ -422,19 +429,19 @@ impl LaApp {
             if enabled {
                 t.to_owned()
             } else if s.state.is_busy() {
-                "Disabled while recording".into()
+                tr("Disabled while recording").into()
             } else {
-                format!("{t} (needs data)")
+                tr("{} (needs data)").replacen("{}", t, 1)
             }
         };
-        let (range_tip, marker_tip) = (tip("Add Measurement"), tip("Add Timing Marker"));
+        let (range_tip, marker_tip) = (tip(tr("Add Measurement")), tip(tr("Add Timing Marker")));
         // After the capture button and the Repeat toggle.
         let x0 = group.left() + CAPTURE_ITEM_W * 2.0 + 3.0;
         // Add Analyzer: the picker popover below it.
         let analyzer = Rect::from_min_size(pos2(x0, group.top()), vec2(CAPTURE_ITEM_W, TOOLBAR_H));
         let recording = s.state.is_busy();
-        let resp = tool_button(ui, analyzer, "Add Analyzer", !recording, false, icons::loupe);
-        let resp = resp.on_hover_text(if recording { "Disabled while recording" } else { "Add Analyzer" });
+        let resp = tool_button(ui, analyzer, tr("Add Analyzer"), !recording, false, icons::loupe);
+        let resp = resp.on_hover_text(if recording { tr("Disabled while recording") } else { tr("Add Analyzer") });
         // Analyze → Add Analyzer… and the palette open the same picker.
         if std::mem::take(&mut self.ui.open_picker) && !recording {
             egui::Popup::open_id(ui.ctx(), egui::Popup::default_response_id(&resp));
@@ -444,25 +451,25 @@ impl LaApp {
         let enabled = s.has_data() && !s.state.is_busy();
         let range = Rect::from_min_size(pos2(analyzer.right(), group.top()), vec2(CAPTURE_ITEM_W, TOOLBAR_H));
         let placing = self.ui.range_place.is_some();
-        let resp = tool_button(ui, range, "Add Measurement", enabled, placing, icons::tape_measure);
+        let resp = tool_button(ui, range, tr("Add Measurement"), enabled, placing, icons::tape_measure);
         let cmd = cmd_key();
         if resp.on_hover_text(format!("{range_tip} ({cmd}+G, Shift+Drag)")).clicked() {
             self.begin_range_placement();
         }
         let marker = Rect::from_min_size(pos2(range.right(), group.top()), vec2(CAPTURE_ITEM_W, TOOLBAR_H));
-        let resp = tool_button(ui, marker, "Add Timing Marker", enabled, self.ui.placing.is_some(), icons::flag);
+        let resp = tool_button(ui, marker, tr("Add Timing Marker"), enabled, self.ui.placing.is_some(), icons::flag);
         let chevron =
             Rect::from_min_size(pos2(marker.right(), group.top()), vec2(super::graph::MARKER_CHEVRON_W, TOOLBAR_H));
-        let menu = tool_button(ui, chevron, "Timing Marker Options", enabled, false, icons::chevron_down);
+        let menu = tool_button(ui, chevron, tr("Timing Marker Options"), enabled, false, icons::chevron_down);
         if resp.on_hover_text(format!("{marker_tip} ({cmd}+T)")).clicked() {
             self.begin_marker_placement(true);
         }
         let mut pick = None;
         Popup::menu(&menu).frame(popover_frame(ui)).width(260.0).show(|ui| {
-            if crate::ui::widgets::menu_item(ui, "Add Marker Pair", Some("Shift+M")).clicked() {
+            if crate::ui::widgets::menu_item(ui, tr("Add Marker Pair"), Some("Shift+M")).clicked() {
                 pick = Some(true);
             }
-            if crate::ui::widgets::menu_item(ui, "Add Single Marker", Some("M")).clicked() {
+            if crate::ui::widgets::menu_item(ui, tr("Add Single Marker"), Some("M")).clicked() {
                 pick = Some(false);
             }
         });

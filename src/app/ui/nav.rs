@@ -435,8 +435,8 @@ impl LaApp {
             }
         };
         let (range_tip, marker_tip) = (tip(tr("Add Measurement")), tip(tr("Add Timing Marker")));
-        // After the capture button and the Repeat toggle.
-        let x0 = group.left() + CAPTURE_ITEM_W * 2.0 + 3.0;
+        // After the capture button, the Repeat toggle and the mode dropdown.
+        let x0 = group.left() + CAPTURE_ITEM_W * 2.0 + 3.0 + super::graph::MODE_ITEM_W;
         // Add Analyzer: the picker popover below it.
         let analyzer = Rect::from_min_size(pos2(x0, group.top()), vec2(CAPTURE_ITEM_W, TOOLBAR_H));
         let recording = s.state.is_busy();

@@ -4,8 +4,9 @@
 use super::{DragState, HoverRow, Marquee, MarqueeKind};
 use crate::app::LaApp;
 use crate::app::settings::{MarqueeMode, RelativeZoom};
+use crate::core::ChannelKind;
 use crate::core::animator::{Anchor, JUMP_DURATION, ViewRequest, WHEEL_ZOOM_DURATION};
-use crate::core::capture::CaptureState;
+use crate::core::capture::{CaptureMode, CaptureState};
 use crate::core::nav::{WheelAction, WheelInput};
 use crate::core::{CaptureTime, ViewState};
 use crate::l10n::tr;
@@ -27,10 +28,12 @@ pub(crate) const MARKER_CHEVRON_W: f32 = 16.0;
 
 /// The capture group, centered over the plot.
 pub(crate) fn capture_group(l: &Layout) -> Rect {
-    let w = CAPTURE_ITEM_W * 5.0 + 3.0 + MARKER_CHEVRON_W;
+    let w = CAPTURE_ITEM_W * 5.0 + 3.0 + MODE_ITEM_W + MARKER_CHEVRON_W;
     Rect::from_min_size(pos2(l.plot_rows.center().x - w / 2.0, l.toolbar.top()), vec2(w, TOOLBAR_H))
 }
 pub(crate) const CAPTURE_ITEM_W: f32 = 48.0;
+/// The capture mode dropdown: the mode's icon and a chevron.
+pub(crate) const MODE_ITEM_W: f32 = CAPTURE_ITEM_W + MARKER_CHEVRON_W;
 const SCROLLBAR_H: f32 = 10.0;
 /// double-click zoom factor.
 const DOUBLE_CLICK_ZOOM: f64 = 0.3;
@@ -441,6 +444,7 @@ impl LaApp {
             self.toggle_capture(&ctx);
         }
         self.repeat_button(ui, item);
+        self.capture_mode_button(ui, item);
         self.annotation_tools(ui, group);
         self.inspector_toggle_button(ui, l);
     }
@@ -471,6 +475,73 @@ impl LaApp {
         };
         if resp.on_hover_text(tip).clicked() {
             self.dispatch("capture.repeat");
+        }
+    }
+
+    /// The capture mode dropdown (Trigger, Timed, Continuous), right of
+    /// the Repeat toggle.
+    fn capture_mode_button(&mut self, ui: &mut Ui, capture: Rect) {
+        let Some(s) = self.session.as_ref() else { return };
+        let left = capture.right() + 3.0 + CAPTURE_ITEM_W;
+        let r = Rect::from_min_size(pos2(left, capture.top()), vec2(MODE_ITEM_W, TOOLBAR_H));
+        let mode = s.settings.mode;
+        let enabled = s.caps.is_some() && !s.state.is_busy() && !s.is_read_only();
+        let streams = s.caps.as_ref().is_some_and(|c| c.supports_continuous);
+        let any_digital =
+            s.rows.iter().any(|r| r.channel.kind == ChannelKind::Digital && s.settings.is_enabled(r.channel));
+        let icon = |p: &egui::Painter, _: Rect, c| {
+            let i = Rect::from_center_size(pos2(r.left() + CAPTURE_ITEM_W / 2.0, r.center().y), vec2(16.0, 16.0));
+            mode_icon(mode)(p, i, c);
+            let ch = Rect::from_center_size(
+                pos2(r.right() - MARKER_CHEVRON_W / 2.0 - 2.0, r.center().y),
+                vec2(MARKER_CHEVRON_W - 4.0, MARKER_CHEVRON_W - 4.0),
+            );
+            icons::chevron_down(p, ch, c);
+        };
+        let resp = super::nav::tool_button(ui, r, tr("Capture Mode"), enabled, false, icon);
+        let tip = if s.state.is_busy() {
+            tr("Disabled while recording").to_owned()
+        } else {
+            tr("Capture mode: {}").replacen("{}", mode_name(mode), 1)
+        };
+        let resp = resp.on_hover_text(tip);
+        let mut pick = None;
+        egui::Popup::menu(&resp).frame(crate::ui::widgets::popover_frame(ui)).width(240.0).show(|ui| {
+            for (m, ok, tip) in [
+                (
+                    CaptureMode::Triggered,
+                    any_digital,
+                    if any_digital {
+                        tr("Record continuously until a trigger condition is found")
+                    } else {
+                        tr("Enable a digital channel first.")
+                    },
+                ),
+                (CaptureMode::Timed, true, tr("Capture for a fixed duration")),
+                (
+                    CaptureMode::Continuous,
+                    streams,
+                    if streams {
+                        tr("Continuous recording that discards the oldest data as new data arrives")
+                    } else {
+                        tr("This device records into its own memory and can't stream. Use Trigger or Timed.")
+                    },
+                ),
+            ] {
+                let item =
+                    ui.add_enabled_ui(ok, |ui| crate::ui::widgets::menu_check_item(ui, mode_name(m), m == mode, None));
+                let item = item.inner;
+                let item = if ok { item.on_hover_text(tip) } else { item.on_disabled_hover_text(tip) };
+                if item.clicked() {
+                    pick = Some(m);
+                }
+            }
+        });
+        if let Some(m) = pick
+            && m != mode
+        {
+            self.session.as_mut().unwrap().settings.mode = m;
+            self.mark_settings_dirty();
         }
     }
 
@@ -708,6 +779,22 @@ impl LaApp {
 }
 
 /// Why an imported file's session can't record.
+fn mode_name(m: CaptureMode) -> &'static str {
+    match m {
+        CaptureMode::Triggered => tr("Trigger"),
+        CaptureMode::Timed => tr("Timed"),
+        CaptureMode::Continuous => tr("Continuous"),
+    }
+}
+
+fn mode_icon(m: CaptureMode) -> fn(&egui::Painter, Rect, egui::Color32) {
+    match m {
+        CaptureMode::Triggered => icons::trigger_edge,
+        CaptureMode::Timed => icons::stopwatch,
+        CaptureMode::Continuous => icons::infinity,
+    }
+}
+
 pub(crate) fn import_cannot_record(s: &crate::app::session::Session) -> String {
     let format = s.device.display_name();
     if format.is_empty() {

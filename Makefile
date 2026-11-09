@@ -108,7 +108,7 @@ check:
 	$(CARGO) clippy --all-targets --features mock -- -D warnings
 
 screenshots:
-	$(CARGO) test --test screenshots -- --ignored
+	$(CARGO) test --features mock --test screenshots -- --ignored
 
 ICON_DIR = assets
 # The sigrok-util firmware extraction scripts and the open

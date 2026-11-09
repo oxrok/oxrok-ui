@@ -48,11 +48,12 @@ pub fn stopwatch(painter: &Painter, r: Rect, color: Color32) {
 
 /// Continuous mode: ∞.
 pub fn infinity(painter: &Painter, r: Rect, color: Color32) {
-    // Lemniscate of Gerono, stretched to the box.
-    let pts: Vec<Pos2> = (0..=40)
+    // Lemniscate of Bernoulli: round lobes like the glyph's.
+    let pts: Vec<Pos2> = (0..48)
         .map(|i| {
-            let t = i as f32 / 40.0 * std::f32::consts::TAU;
-            p(r, 0.5 + 0.47 * t.cos(), 0.5 + 0.55 * (t.sin() * t.cos()))
+            let t = i as f32 / 48.0 * std::f32::consts::TAU;
+            let d = 1.0 + t.sin() * t.sin();
+            p(r, 0.5 + 0.44 * t.cos() / d, 0.5 + 0.62 * t.sin() * t.cos() / d)
         })
         .collect();
     painter.add(PathShape::closed_line(pts, Stroke::new(STROKE, color)));

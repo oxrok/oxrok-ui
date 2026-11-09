@@ -87,7 +87,9 @@ fn buffered_device_defaults_to_timer_with_compression() {
     let (mut h, _) = rig();
     open(&mut h);
     assert_eq!(h.state().session().unwrap().settings.mode, CaptureMode::Timed);
-    let looping = h.get_by_role_and_label(egui::Role::RadioButton, "Continuous");
+    h.get_by_role_and_label(egui::Role::Button, "Capture Mode").click();
+    h.run_steps(3);
+    let looping = h.get_by_role_and_label(egui::Role::MenuItemCheckBox, "Continuous");
     assert!(looping.accesskit_node().is_disabled(), "Continuous needs a streaming device");
     let rle = h.get_by_role_and_label(egui::Role::Switch, "Compression (RLE)");
     assert_eq!(rle.accesskit_node().toggled(), Some(Toggled::True), "on by default");
@@ -126,7 +128,11 @@ fn streaming_devices_keep_looping_and_have_no_switch() {
     });
     open(&mut h);
     assert_eq!(h.state().session().unwrap().settings.mode, CaptureMode::Continuous);
-    assert!(!h.get_by_role_and_label(egui::Role::RadioButton, "Continuous").accesskit_node().is_disabled());
+    h.get_by_role_and_label(egui::Role::Button, "Capture Mode").click();
+    h.run_steps(3);
+    assert!(!h.get_by_role_and_label(egui::Role::MenuItemCheckBox, "Continuous").accesskit_node().is_disabled());
+    h.key_press(Key::Escape);
+    h.run_steps(3);
     assert!(h.query_by_role_and_label(egui::Role::Switch, "Compression (RLE)").is_none());
 }
 

@@ -13,6 +13,14 @@ use oxrok_ui::core::{CaptureTime, ChannelId, ManualClock};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
+/// Picks a capture mode from the toolbar dropdown.
+fn pick_mode(h: &mut Harness<'_, LaApp>, mode: &str) {
+    h.get_by_role_and_label(egui::Role::Button, "Capture Mode").click();
+    h.run_steps(3);
+    h.get_by_role_and_label(egui::Role::MenuItemCheckBox, mode).click();
+    h.run_steps(3);
+}
+
 const RATE: u64 = 8_000_000;
 const D0: ChannelId = ChannelId::digital(0);
 
@@ -103,7 +111,7 @@ impl Rig {
 #[test]
 fn trigger_mode() {
     let mut r = Rig::new(MockOptions::default());
-    r.h.get_by_label("Trigger").click();
+    pick_mode(&mut r.h, "Trigger");
     r.h.run_steps(4);
     let s = r.h.state().session().unwrap();
     assert_eq!(s.settings.mode, CaptureMode::Triggered);
@@ -131,7 +139,7 @@ fn trigger_mode() {
 #[test]
 fn invalid_trigger_badge_and_toast() {
     let mut r = Rig::new(MockOptions::default());
-    r.h.get_by_label("Trigger").click();
+    pick_mode(&mut r.h, "Trigger");
     r.h.run_steps(3);
     {
         let s = r.h.state_mut().session_mut().unwrap();
@@ -151,7 +159,7 @@ fn invalid_trigger_badge_and_toast() {
 #[test]
 fn session_reset_keeps_configuration() {
     let mut r = Rig::new(MockOptions::default());
-    r.h.get_by_label("Timed").click();
+    pick_mode(&mut r.h, "Timed");
     r.h.run_steps(2);
     r.type_time("Stop recording after", "100ms");
     r.record_until_done();
@@ -191,12 +199,12 @@ fn start_failure() {
 #[test]
 fn pre_trigger_duration_on_buffered_devices() {
     let mut r = Rig::new(MockOptions::default());
-    r.h.get_by_label("Trigger").click();
+    pick_mode(&mut r.h, "Trigger");
     r.h.run_steps(3);
     assert!(r.h.query_by_label("Capture duration before trigger").is_none());
 
     let mut r = Rig::new(MockOptions { buffered: Some(1 << 30), ..MockOptions::default() });
-    r.h.get_by_label("Trigger").click();
+    pick_mode(&mut r.h, "Trigger");
     r.h.run_steps(3);
     r.type_time("Capture duration before trigger", "20ms");
     r.type_time("Capture duration after trigger", "80ms");
@@ -216,7 +224,7 @@ fn pre_trigger_duration_on_buffered_devices() {
 #[test]
 fn no_progress_card_on_buffered_devices() {
     let mut r = Rig::new(MockOptions { buffered: Some(1 << 30), ..MockOptions::default() });
-    r.h.get_by_label("Trigger").click();
+    pick_mode(&mut r.h, "Trigger");
     r.h.run_steps(3);
     r.h.key_press(Key::Space);
     r.until(|a| a.session().unwrap().state == CaptureState::Recording);

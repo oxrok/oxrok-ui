@@ -330,6 +330,12 @@ impl Session {
         self.opened_from.is_some()
     }
 
+    /// The samples came from an imported file (VCD, CSV, `.sr`, …),
+    /// which no device recorded: there is nothing to record more with.
+    pub fn is_import(&self) -> bool {
+        self.device.driver == crate::app::file::IMPORT_DRIVER
+    }
+
     /// Display name, `[DEMO] ` prefixed for demo devices.
     pub fn device_display_name(&self) -> String {
         device_display_name(&self.device)

@@ -707,6 +707,17 @@ impl LaApp {
     }
 }
 
+/// Why an imported file's session can't record.
+pub(crate) fn import_cannot_record(s: &crate::app::session::Session) -> String {
+    let format = s.device.display_name();
+    if format.is_empty() {
+        tr("An imported file has no device to record with. Start a new session on a device.").to_owned()
+    } else {
+        tr("An imported {} file has no device to record with. Start a new session on a device.")
+            .replacen("{}", &format, 1)
+    }
+}
+
 impl LaApp {
     /// Why recording isn't possible right now, if it isn't.
     pub fn capture_blocked(&self) -> Option<String> {
@@ -716,6 +727,9 @@ impl LaApp {
         }
         if s.open_error.is_some() {
             return Some(tr("The device was disconnected. Reconnect it or start a new session.").into());
+        }
+        if s.is_import() {
+            return Some(import_cannot_record(s));
         }
         // An opened file records when its kind of device is here.
         if s.is_read_only() {

@@ -87,7 +87,7 @@ impl LaApp {
             self.mark_settings_dirty();
         }
         self.inspector_tab_strip(ui, true);
-        let tab = self.settings.inspector.tab.clone();
+        let tab = self.inspector_tab().to_owned();
         self.inspector_content(ui, &tab);
         self.ui.in_inspector = false;
     }
@@ -166,15 +166,35 @@ impl LaApp {
         });
     }
 
-    /// The Inspector's tabs, in tab order. Each has an icon, a
-    /// short label (drawn in the strip) and a full label (accessibility).
-    fn inspector_tabs(&self) -> [(&'static str, &'static str, &'static str, IconFn); 4] {
-        [
+    /// Whether the active session has a device to show: an
+    /// imported file has none, so no Device tab.
+    fn has_device_tab(&self) -> bool {
+        !self.session.as_ref().is_some_and(|s| s.is_import())
+    }
+
+    /// The tab shown: the chosen one, or Analyzers in place of a
+    /// hidden Device tab. The choice is kept for the next device session.
+    pub(crate) fn inspector_tab(&self) -> &str {
+        let tab = self.settings.inspector.tab.as_str();
+        if tab == DEVICE_PANEL && !self.has_device_tab() { super::analyzers::ANALYZERS_PANEL } else { tab }
+    }
+
+    /// The Inspector's tabs, in tab order, with their Alt+n number.
+    /// Each has an icon, a short label (drawn in the strip) and a full
+    /// label (accessibility).
+    fn inspector_tabs(&self) -> Vec<(usize, &'static str, &'static str, &'static str, IconFn)> {
+        let all: [(&'static str, &'static str, &'static str, IconFn); 4] = [
             (DEVICE_PANEL, "Device", "Device", icons::device),
             (super::analyzers::ANALYZERS_PANEL, "Analyzers", "Analyze", icons::loupe),
             (super::ranges::RANGES_PANEL, "Measurements", "Measure", icons::tape_measure),
             (super::markers::MARKERS_PANEL, "Markers", "Markers", icons::flag),
-        ]
+        ];
+        let device = self.has_device_tab();
+        all.into_iter()
+            .enumerate()
+            .filter(|(_, t)| device || t.0 != DEVICE_PANEL)
+            .map(|(i, (id, full, short, icon))| (i + 1, id, full, short, icon))
+            .collect()
     }
 
     /// The tab strip, a single row of equal-width icon+label segments.
@@ -186,17 +206,18 @@ impl LaApp {
         let strip_w = ui.available_width();
         let (strip, _) = ui.allocate_exact_size(vec2(strip_w, TAB_H), Sense::hover());
         let seg_w = (strip_w - DETACH_W) / n as f32;
-        for (i, (id, full, short, icon)) in tabs.iter().enumerate() {
+        let shown = self.inspector_tab().to_owned();
+        for (i, (key, id, full, short, icon)) in tabs.iter().enumerate() {
             let x = strip.left() + i as f32 * seg_w;
             let rect = Rect::from_min_size(pos2(x, strip.top()), vec2(seg_w, TAB_H));
-            let selected = has_session && self.settings.inspector.tab == *id;
+            let selected = has_session && shown == *id;
             let resp = ui.interact(
                 rect,
                 ui.make_persistent_id(("inspector_tab", *id)),
                 if has_session { Sense::click() } else { Sense::hover() },
             );
             resp.widget_info(|| WidgetInfo::selected(Role::Button, has_session, selected, tr(full)));
-            let resp = resp.on_hover_text(format!("{} (Alt+{})", tr(full), i + 1));
+            let resp = resp.on_hover_text(format!("{} (Alt+{key})", tr(full)));
             if selected {
                 ui.painter().rect_filled(rect, 4.0, theme.color(Token::Flare));
             }

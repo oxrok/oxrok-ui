@@ -11,6 +11,10 @@ use crate::core::markers::{Markers, TimeOrigin};
 use crate::core::ranges::Ranges;
 use crate::core::{CaptureTime, ChannelId, ChannelKind, ViewState, WallClock};
 use crate::decode::Radix;
+
+/// The driver of an imported file's session (VCD, CSV, `.sr`, …): no
+/// device recorded it and none can record more.
+pub const IMPORT_DRIVER: &str = "file";
 use crate::store::LogicIngest;
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
@@ -317,8 +321,8 @@ pub fn imported_session(
 ) -> Session {
     let enabled: Vec<ChannelId> = info.channels.iter().map(|c| c.id).collect();
     let device = DeviceInfo {
-        id: crate::backend::DeviceId::new("file", &path.display().to_string()),
-        driver: "file".into(),
+        id: crate::backend::DeviceId::new(IMPORT_DRIVER, &path.display().to_string()),
+        driver: IMPORT_DRIVER.into(),
         vendor: String::new(),
         model: info.format.clone(),
         version: String::new(),

@@ -17,6 +17,14 @@ use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
+/// Picks a capture mode from the toolbar dropdown.
+fn pick_mode(h: &mut Harness<'_, LaApp>, mode: &str) {
+    h.get_by_role_and_label(egui::Role::Button, "Capture Mode").click();
+    h.run_steps(3);
+    h.get_by_role_and_label(egui::Role::MenuItemCheckBox, mode).click();
+    h.run_steps(3);
+}
+
 fn until(h: &mut Harness<'_, LaApp>, what: &str, cond: impl Fn(&LaApp) -> bool) {
     let t0 = Instant::now();
     while !cond(h.state()) {
@@ -53,7 +61,7 @@ fn trigger_mode_pre_trigger_in_the_app() {
     h.run();
     h.get_by_role_and_label(egui::Role::Button, "Intronix LogicPort").click();
     until(&mut h, "device opened", |a| a.session().is_some_and(|s| s.caps.is_some()));
-    h.get_by_label("Trigger").click();
+    pick_mode(&mut h, "Trigger");
     h.run_steps(3);
     let out = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("target/hil");
     std::fs::create_dir_all(&out).unwrap();

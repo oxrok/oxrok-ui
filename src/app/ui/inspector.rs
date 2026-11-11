@@ -13,9 +13,7 @@ use crate::ui::icons;
 use crate::ui::theme::ThemeExt;
 use crate::ui::toast::{Toast, ToastKind};
 use crate::ui::typography::Text;
-use crate::ui::widgets::{
-    BinarySwitch, Dropdown, GridResponse, IconFn, Segment, channel_grid_section, segmented_icons, stepper, time_input,
-};
+use crate::ui::widgets::{BinarySwitch, Dropdown, GridResponse, IconFn, channel_grid_section, stepper, time_input};
 use egui::{Frame, Margin, Panel, Rect, Role, ScrollArea, Sense, Stroke, Ui, WidgetInfo, pos2, vec2};
 
 /// Panel header height.
@@ -410,7 +408,7 @@ impl LaApp {
         let mut rate_idx = rates.iter().position(|&r| r == s.settings.sample_rate).unwrap_or(0);
         let rate_text = rate_label(s.settings.sample_rate);
         let buffer_mb = s.settings.buffer_mb;
-        let mut mode_idx = match s.settings.mode {
+        let mode_idx = match s.settings.mode {
             CaptureMode::Triggered => 0,
             CaptureMode::Timed => 1,
             CaptureMode::Continuous => 2,
@@ -434,39 +432,7 @@ impl LaApp {
         // The whole area is disabled while capturing.
         let area = ui.add_enabled_ui(!busy, |ui| {
             let mut out = PanelEdits::default();
-            // Trigger, Timed, Continuous, each with its icon.
-            let segments = [
-                if digital_items.is_empty() {
-                    Segment {
-                        label: tr("Trigger"),
-                        enabled: false,
-                        tooltip: tr("Enable a digital channel first."),
-                    }
-                } else {
-                    Segment {
-                        label: tr("Trigger"),
-                        enabled: true,
-                        tooltip: tr("Record continuously until a trigger condition is found"),
-                    }
-                },
-                Segment { label: tr("Timed"), enabled: true, tooltip: tr("Capture for a fixed duration") },
-                // A buffered device can't keep a rolling window.
-                if streams {
-                    Segment {
-                        label: tr("Continuous"),
-                        enabled: true,
-                        tooltip: tr("Continuous recording that discards the oldest data as new data arrives"),
-                    }
-                } else {
-                    Segment {
-                        label: tr("Continuous"),
-                        enabled: false,
-                        tooltip: tr("This device records into its own memory and can't stream. Use Trigger or Timed."),
-                    }
-                },
-            ];
-            let icons: [IconFn; 3] = [icons::trigger_edge, icons::stopwatch, icons::infinity];
-            out.mode_changed = segmented_icons(ui, "capture_mode", &segments, &icons, &mut mode_idx);
+            // The mode itself is picked in the toolbar.
             if mode_idx == 1 {
                 ui.add_space(12.0);
                 hint(ui, tr("Stop recording after"));
@@ -478,8 +444,11 @@ impl LaApp {
                 out.trigger_changed =
                     super::capture_opts::trigger_editor(ui, &mut trig, &digital_items, &mut conditions_open, !streams);
             }
-            ui.add_space(20.0);
-            divider(ui);
+            // Continuous has no settings of its own.
+            if mode_idx != 2 {
+                ui.add_space(20.0);
+                divider(ui);
+            }
             if !digital_order.is_empty() {
                 out.digital = channel_grid_section(ui, tr("Digital"), digital, &[tr("Probe Colors…")]);
                 ui.add_space(12.0);
@@ -558,14 +527,6 @@ impl LaApp {
             s.settings.sample_rate = r;
             changed = true;
         }
-        if edits.mode_changed {
-            s.settings.mode = match mode_idx {
-                0 => CaptureMode::Triggered,
-                1 => CaptureMode::Timed,
-                _ => CaptureMode::Continuous,
-            };
-            changed = true;
-        }
         if edits.trigger_changed {
             s.settings.trigger = trig;
             changed = true;
@@ -613,7 +574,6 @@ struct PanelEdits {
     digital: GridResponse,
     analog: GridResponse,
     rate_changed: bool,
-    mode_changed: bool,
     timer_changed: bool,
     rle_changed: bool,
     trigger_changed: bool,

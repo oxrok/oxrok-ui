@@ -15,6 +15,14 @@ use oxrok_ui::decode::runner::Status;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
+/// Picks a capture mode from the toolbar dropdown.
+fn pick_mode(h: &mut Harness<'_, LaApp>, mode: &str) {
+    h.get_by_role_and_label(egui::Role::Button, "Capture Mode").click();
+    h.run_steps(3);
+    h.get_by_role_and_label(egui::Role::MenuItemCheckBox, mode).click();
+    h.run_steps(3);
+}
+
 const RATE: u64 = 8_000_000;
 
 struct Rig {
@@ -81,7 +89,7 @@ impl Rig {
     }
 
     fn trigger_mode(&mut self) {
-        self.h.get_by_role_and_label(Role::RadioButton, "Trigger").click();
+        pick_mode(&mut self.h, "Trigger");
         self.h.run_steps(3);
         self.h.state_mut().session_mut().unwrap().settings.trigger.post_trigger_seconds = 0.01;
         self.h.get_by_role_and_label(Role::Button, "Repeat").click();
@@ -149,7 +157,7 @@ fn repeat_rounds() {
     let mut r = Rig::new();
     assert_eq!(r.h.state().session().unwrap().settings.mode, CaptureMode::Continuous);
     assert!(!r.repeat_button(), "Continuous never ends by itself");
-    r.h.get_by_role_and_label(Role::RadioButton, "Timed").click();
+    pick_mode(&mut r.h, "Timed");
     r.h.run_steps(3);
     assert!(!r.repeat_button(), "Repeat is for Trigger mode");
     r.trigger_mode();

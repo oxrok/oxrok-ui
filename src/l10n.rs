@@ -585,6 +585,8 @@ const ENTRIES: &[(&str, &str, &str)] = &[
     ("Capture notes", "Notas de la captura", "采集备注"),
     ("Device Information", "Información del dispositivo", "设备信息"),
     ("Opening device…", "Abriendo dispositivo…", "正在打开设备…"),
+    ("Capture Mode", "Modo de captura", "采集模式"),
+    ("Capture mode: {}", "Modo de captura: {}", "采集模式：{}"),
     ("Trigger", "Disparo", "触发"),
     ("Enable a digital channel first.", "Activa primero un canal digital.", "请先启用数字通道。"),
     ("Record continuously until a trigger condition is found",

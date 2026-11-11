@@ -13,6 +13,14 @@ use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
+/// Picks a capture mode from the toolbar dropdown.
+fn pick_mode(h: &mut Harness<'_, LaApp>, mode: &str) {
+    h.get_by_role_and_label(egui::Role::Button, "Capture Mode").click();
+    h.run_steps(3);
+    h.get_by_role_and_label(egui::Role::MenuItemCheckBox, mode).click();
+    h.run_steps(3);
+}
+
 const RATE: u64 = 8_000_000;
 
 struct Rig {
@@ -105,7 +113,7 @@ fn timer_mode_stops_by_itself() {
     // The Inspector starts closed: open it on the Device tab.
     r.h.key_press_modifiers(Modifiers::ALT, Key::Num1);
     r.h.run_steps(3);
-    r.h.get_by_role_and_label(egui::Role::RadioButton, "Timed").click();
+    pick_mode(&mut r.h, "Timed");
     r.h.run();
     // Type 0.5 s into the timer field (default 1 s).
     r.h.get_by_role_and_label(egui::Role::TextInput, "Stop recording after").click();

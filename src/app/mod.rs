@@ -84,12 +84,8 @@ pub struct AppOptions {
 pub(crate) enum AppEvent {
     FolderPicked(Option<PathBuf>),
     ExportDone(Result<(PathBuf, u64), String>),
-    /// The folder for an analyzer's CSV.
-    /// The file to extract from was chosen (or not).
-    FirmwareInput(Option<PathBuf>),
-    /// A line of the script's output, then its result.
-    FirmwareLine(String),
-    FirmwareDone(Result<Vec<PathBuf>, String>),
+    /// Files or a folder to install firmware from were picked.
+    FirmwareInput(Vec<PathBuf>),
     /// A "driver:conn" scan finished.
     Connected(String, Result<Vec<DeviceInfo>, String>),
     /// The CSV lines to write, and where (None: cancelled).
@@ -104,6 +100,8 @@ pub(crate) enum AppEvent {
 pub(crate) struct UiState {
     /// Install Firmware, while open.
     pub install_firmware: Option<ui::help::InstallFirmware>,
+    /// The missing file the "firmware-missing" toast offers to install.
+    pub firmware_toast: Option<String>,
     /// About, while open, and the icon it shows.
     pub about: Option<ui::help::About>,
     pub app_icon: Option<egui::TextureHandle>,
@@ -1063,7 +1061,7 @@ impl LaApp {
                 }
                 Err(e) => {
                     self.session.as_mut().unwrap().open_error = Some(e.clone());
-                    self.toast(Toast::new(ToastKind::Error, e).heading(crate::l10n::tr("Failed to open device")));
+                    self.device_error_toast(crate::l10n::tr("Failed to open device"), e);
                 }
             },
             WorkerEvent::Started { session, result } if Some(session) == current => match result {
@@ -1109,9 +1107,7 @@ impl LaApp {
                     } else {
                         e
                     };
-                    self.toast(
-                        Toast::new(ToastKind::Error, e).heading(crate::l10n::tr("Could not begin the capture.")),
-                    );
+                    self.device_error_toast(crate::l10n::tr("Could not begin the capture."), e);
                 }
             },
             WorkerEvent::Stopped { session }
@@ -1594,6 +1590,20 @@ impl LaApp {
         self.scan_rx.is_some()
     }
 
+    /// The error of a device that didn't open or start. When a firmware
+    /// file it names is missing, the toast offers to install it: some
+    /// devices load theirs only then, after the scan.
+    fn device_error_toast(&mut self, heading: &str, error: String) {
+        self.firmware = self.backend.firmware_status();
+        let missing = self.firmware.missing.iter().find(|m| error.contains(&m.file)).map(|m| m.file.clone());
+        let mut toast = Toast::new(ToastKind::Error, error).heading(heading);
+        if missing.is_some() {
+            toast = toast.id("firmware-missing").action("Install…");
+        }
+        self.ui.firmware_toast = missing;
+        self.toast(toast);
+    }
+
     /// The new list; sessions whose device couldn't be opened
     /// re-bind when it is back.
     fn on_scanned(&mut self, devices: Vec<DeviceInfo>, firmware: crate::backend::FirmwareStatus) {
@@ -1714,8 +1724,6 @@ impl LaApp {
                 AppEvent::TableExportFile(_, None) => {}
                 AppEvent::Connected(spec, r) => self.on_connected(spec, r),
                 AppEvent::FirmwareInput(p) => self.on_firmware_input(p),
-                AppEvent::FirmwareLine(l) => self.on_firmware_line(l),
-                AppEvent::FirmwareDone(r) => self.on_firmware_done(r),
             }
         }
     }
@@ -1842,6 +1850,11 @@ impl eframe::App for LaApp {
                 {
                     s.settings.mode = mode;
                     s.analyzer_trigger.enabled = false;
+                }
+            } else if id == "firmware-missing" && action == "Install…" {
+                self.toasts.dismiss(&id);
+                if let Some(file) = self.ui.firmware_toast.take() {
+                    self.open_install_firmware(&file);
                 }
             } else if id == "range-deleted" && action == "Undo" {
                 self.toasts.dismiss(&id);

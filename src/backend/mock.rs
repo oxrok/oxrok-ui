@@ -48,7 +48,8 @@ pub struct MockOptions {
     pub samplerates: Vec<u64>,
     /// Samples per logic packet.
     pub chunk_samples: usize,
-    /// Injected error: `start` fails.
+    /// Injected error: `start` fails (naming `missing_firmware`'s file,
+    /// when set).
     pub fail_start: bool,
     /// Injected error: the device disconnects after this many samples.
     pub disconnect_after_samples: Option<u64>,
@@ -60,10 +61,12 @@ pub struct MockOptions {
     pub rle_max_rate: Option<u64>,
     /// List logic thresholds.
     pub thresholds: bool,
-    /// Report this file `(driver, file)` missing,
-    /// with this firmware dir, until it is "extracted".
+    /// Report this file `(driver, file)` missing while it isn't in
+    /// `firmware_dir`, where installs go.
     pub missing_firmware: Option<(String, String)>,
     pub firmware_dir: Option<std::path::PathBuf>,
+    /// A firmware download never ends by itself: it waits for Cancel.
+    pub firmware_download_stalls: bool,
 }
 
 impl Default for MockOptions {
@@ -93,6 +96,7 @@ impl Default for MockOptions {
             thresholds: false,
             missing_firmware: None,
             firmware_dir: None,
+            firmware_download_stalls: false,
         }
     }
 }
@@ -101,8 +105,6 @@ pub struct MockBackend {
     options: MockOptions,
     /// Plugged in and out by tests.
     devices: parking_lot::Mutex<Vec<DeviceInfo>>,
-    /// The missing file was "extracted".
-    extracted: std::sync::atomic::AtomicBool,
 }
 
 fn mock_device(serial: &str, model: &str, digital: u16, analog: u16) -> DeviceInfo {
@@ -130,7 +132,7 @@ impl MockBackend {
             mock_device("mock-8", "Mock 8 digital", 8, 0),
             mock_device("mock-16-4", "Mock 16 digital + 4 analog", 16, 4),
         ];
-        Self { options, devices: parking_lot::Mutex::new(devices), extracted: Default::default() }
+        Self { options, devices: parking_lot::Mutex::new(devices) }
     }
 
     /// Tests: a physical (non-demo) mock device appears…
@@ -192,35 +194,49 @@ impl Backend for MockBackend {
     }
 
     fn firmware_status(&self) -> FirmwareStatus {
-        let extracted = self.extracted.load(std::sync::atomic::Ordering::SeqCst);
+        let dir = self.options.firmware_dir.clone();
         let missing = match &self.options.missing_firmware {
-            Some((driver, file)) if !extracted => vec![MissingFirmware { driver: driver.clone(), file: file.clone() }],
+            Some((driver, file)) if !dir.as_ref().is_some_and(|d| d.join(file).is_file()) => {
+                vec![MissingFirmware { driver: driver.clone(), file: file.clone() }]
+            }
             _ => Vec::new(),
         };
-        let paths = self.options.firmware_dir.iter().map(|d| (d.clone(), d.exists())).collect();
-        FirmwareStatus { missing, paths }
+        let paths = dir.iter().map(|d| (d.clone(), d.exists())).collect();
+        FirmwareStatus { missing, paths, install_dir: dir }
     }
 
-    fn extracts_without_script(&self) -> bool {
-        true
-    }
-
-    /// "Extracts" by copying `input` to the missing file's name.
-    fn extract_firmware(
+    /// A download without the network: reports each of the package's
+    /// downloads in two halves, then writes a stand-in for every file.
+    fn fetch_firmware(
         &self,
-        _script: &std::path::Path,
-        input: &std::path::Path,
-        out_dir: &std::path::Path,
-        progress: &mut dyn FnMut(String),
-    ) -> Result<Vec<std::path::PathBuf>, BackendError> {
-        let Some((_, file)) = &self.options.missing_firmware else { return Ok(Vec::new()) };
-        std::fs::create_dir_all(out_dir).map_err(|e| BackendError::Io(e.to_string()))?;
-        let to = out_dir.join(file);
-        let n = std::fs::copy(input, &to).map_err(|e| BackendError::Io(e.to_string()))?;
-        progress(format!("reading {}", input.display()));
-        progress(format!("saving {file} ({n} bytes)"));
-        self.extracted.store(true, std::sync::atomic::Ordering::SeqCst);
-        Ok(vec![to])
+        pkg: &'static fetch::Package,
+        dest: &std::path::Path,
+        progress: &dyn fetch::Progress,
+    ) -> Result<fetch::Installed, fetch::Error> {
+        for d in pkg.downloads {
+            progress.message(&format!("Downloading {}", d.name));
+            for done in [d.size / 2, d.size] {
+                if progress.cancelled() {
+                    return Err(fetch::Error::Cancelled);
+                }
+                progress.download(d.name, done, d.size);
+            }
+        }
+        while self.options.firmware_download_stalls && !progress.cancelled() {
+            std::thread::sleep(std::time::Duration::from_millis(2));
+        }
+        if progress.cancelled() {
+            return Err(fetch::Error::Cancelled);
+        }
+        std::fs::create_dir_all(dest)?;
+        let mut installed = fetch::Installed::default();
+        for f in pkg.files {
+            let path = dest.join(f);
+            std::fs::write(&path, b"mock firmware")?;
+            progress.message(&format!("Installed {}", path.display()));
+            installed.files.push(path);
+        }
+        Ok(installed)
     }
 }
 
@@ -448,7 +464,13 @@ impl Device for MockDevice {
             return Err(BackendError::Busy);
         }
         if self.options.fail_start {
-            return Err(BackendError::Device("injected start failure".into()));
+            // With a missing firmware file, as a device that loads its
+            // firmware when the acquisition starts.
+            let error = match &self.options.missing_firmware {
+                Some((_, file)) => format!("firmware not found: {file}"),
+                None => "injected start failure".into(),
+            };
+            return Err(BackendError::Device(error));
         }
         if plan.trigger.is_some() {
             return Err(BackendError::Unsupported("hardware triggers on the mock device".into()));

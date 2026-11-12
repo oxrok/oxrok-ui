@@ -175,17 +175,15 @@ impl egui::DroppedFile for Dropped {
     }
 }
 
-/// A missing firmware file: the Devices menu warns; Install… →
-/// choose the file → Extract streams two lines and installs one file;
-/// Rescan clears the warning.
-#[test]
-fn install_firmware() {
+/// The app with `file` missing for `driver`, installs going to a
+/// temporary folder, and Install Firmware open from the Devices menu.
+fn firmware_rig(driver: &str, file: &str, stalls: bool) -> (Rig, tempfile::TempDir, std::path::PathBuf) {
     let dir = tempfile::tempdir().unwrap();
-    let fw = dir.path().join("sigrok-firmware");
-    let file = "kingst-la2016a1-fpga.bitstream";
+    let fw = dir.path().join("oxrok-firmware");
     let mut r = rig_with(MockOptions {
-        missing_firmware: Some(("kingst-la2016".into(), file.into())),
+        missing_firmware: Some((driver.into(), file.into())),
         firmware_dir: Some(fw.clone()),
+        firmware_download_stalls: stalls,
         ..MockOptions::default()
     });
     r.h.get_by_label("Disconnected").click();
@@ -193,22 +191,27 @@ fn install_firmware() {
     r.h.get_by_label("A device needs firmware");
     r.h.get_by_label("Install…").click();
     r.h.run();
-    r.h.get_by_label("Install firmware for Kingst LA");
-    r.h.get_by_label("The KingstVIS executable");
-    // Drop the "vendor download" on the dialog.
-    let fixture = dir.path().join("KingstVIS");
-    std::fs::write(&fixture, b"fpga").unwrap();
-    r.h.input_mut().dropped_files.push(Arc::new(Dropped(fixture)));
-    r.h.run();
-    r.h.get_by_label("Extract firmware").click();
+    r.h.get_by_label("Install firmware");
+    r.h.get_by_label(&format!("{file} is missing."));
+    (r, dir, fw)
+}
+
+/// Steps until a label containing `text` shows (a worker thread is busy),
+/// and the layout settles.
+fn wait_for(r: &mut Rig, text: &str) {
     let t0 = std::time::Instant::now();
-    while r.h.query_by_label_contains("Installed 1 file").is_none() {
-        assert!(t0.elapsed() < Duration::from_secs(10), "no result");
+    while r.h.query_by_label_contains(text).is_none() {
+        assert!(t0.elapsed() < Duration::from_secs(10), "no {text:?}");
         r.h.step();
         std::thread::sleep(Duration::from_millis(5));
     }
-    r.h.get_by_label_contains(&format!("saving {file} (4 bytes)"));
-    assert!(fw.join(file).is_file());
+    // The dialog grew, and is centred again a frame later.
+    r.h.run_steps(4);
+}
+
+/// Rescan in the dialog finds nothing missing, and the Devices menu
+/// stops warning.
+fn rescan_clears_the_warning(r: &mut Rig) {
     r.h.run_steps(10);
     r.h.get_by_label("Rescan").click();
     r.h.run();
@@ -218,4 +221,105 @@ fn install_firmware() {
     r.h.get_by_label("Disconnected").click();
     r.h.run();
     assert!(r.h.query_by_label("A device needs firmware").is_none());
+}
+
+/// A missing file the firmware registry can download: the dialog names
+/// the package, the size and the hosts; Download and install puts every
+/// file of the package in the install folder; Rescan clears the warning.
+#[test]
+fn install_firmware_downloads_the_package() {
+    let file = "kingst-la2016a1-fpga.bitstream";
+    let (mut r, _dir, fw) = firmware_rig("kingst-la2016", file, false);
+    let pkg = oxrok_ui::backend::fetch::package_for(file).unwrap();
+    r.h.get_by_label(pkg.title);
+    r.h.get_by_label("27.8 MB from res.kingst.site, www.qdkingst.com");
+    // The vendor's program, for those who have it already.
+    r.h.get_by_label("Or use files you have");
+    r.h.get_by_label_contains("the KingstVIS program");
+    r.h.get_by_label("Download and install").click();
+    wait_for(&mut r, &format!("Installed {} files", pkg.files.len()));
+    r.h.get_by_label_contains(&format!("Downloading {}", pkg.downloads[0].name));
+    assert!(pkg.files.iter().all(|f| fw.join(f).is_file()));
+    rescan_clears_the_warning(&mut r);
+}
+
+/// Cancel stops a download, and nothing is installed.
+#[test]
+fn install_firmware_download_cancels() {
+    let file = "kingst-la2016a1-fpga.bitstream";
+    let (mut r, _dir, fw) = firmware_rig("kingst-la2016", file, true);
+    r.h.get_by_label("Download and install").click();
+    wait_for(&mut r, "27.8 MB / 27.8 MB");
+    r.h.get_by_label("Cancel").click();
+    wait_for(&mut r, "Cancelled. Nothing was installed.");
+    assert!(!fw.exists());
+    // The download can start again.
+    r.h.get_by_label("Download and install");
+    r.h.key_press(Key::Escape);
+    r.h.run();
+    assert_eq!(r.h.state().firmware_missing(), [file]);
+}
+
+/// A package with no download (fx2lafw from git): the dialog says what
+/// to get; a dropped folder with the files is imported by the registry's
+/// own importer.
+#[test]
+fn install_firmware_from_the_users_files() {
+    let file = "fx2lafw-usb-c-grok.fw";
+    let (mut r, dir, fw) = firmware_rig("fx2lafw", file, false);
+    let pkg = oxrok_ui::backend::fetch::package_for(file).unwrap();
+    r.h.get_by_label(pkg.title);
+    r.h.get_by_label("Use files you have");
+    r.h.get_by_label_contains("built from fx2lafw's git");
+    assert!(r.h.query_by_label("Download and install").is_none());
+    let built = dir.path().join("sigrok-firmware-fx2lafw");
+    std::fs::create_dir(&built).unwrap();
+    for f in pkg.files {
+        std::fs::write(built.join(f), b"fw").unwrap();
+    }
+    r.h.input_mut().dropped_files.push(Arc::new(Dropped(built.clone())));
+    r.h.run();
+    r.h.get_by_label(&built.display().to_string());
+    r.h.get_by_label("Install from these files").click();
+    wait_for(&mut r, "Installed 2 files");
+    assert_eq!(std::fs::read(fw.join(file)).unwrap(), b"fw");
+    rescan_clears_the_warning(&mut r);
+}
+
+/// A device that loads its firmware when the capture starts (as the
+/// LogicPort does) and doesn't find it: the error toast offers the
+/// install.
+#[test]
+fn start_failure_offers_the_firmware() {
+    let file = "kingst-la2016a1-fpga.bitstream";
+    let dir = tempfile::tempdir().unwrap();
+    let mut r = rig_with(MockOptions {
+        missing_firmware: Some(("kingst-la2016".into(), file.into())),
+        firmware_dir: Some(dir.path().join("oxrok-firmware")),
+        fail_start: true,
+        ..MockOptions::default()
+    });
+    r.h.get_by_label("Mock 16 digital + 4 analog").click();
+    let t0 = std::time::Instant::now();
+    while !r.h.state().session().is_some_and(|s| s.caps.is_some()) {
+        assert!(t0.elapsed() < Duration::from_secs(10), "the device didn't open");
+        r.h.step();
+    }
+    r.h.key_press(Key::Space);
+    wait_for(&mut r, &format!("firmware not found: {file}"));
+    r.h.get_by_label("Could not begin the capture.");
+    r.h.get_by_label("Install…").click();
+    r.h.run();
+    r.h.get_by_label("Install firmware");
+    r.h.get_by_label("Download and install");
+    assert!(r.h.query_by_label("Could not begin the capture.").is_none(), "the toast is gone");
+}
+
+/// A file no package provides: the dialog lists the firmware folders.
+#[test]
+fn install_firmware_without_a_known_source() {
+    let (r, _dir, fw) = firmware_rig("odd-driver", "odd.bin", false);
+    r.h.get_by_label_contains("No source is known for this file.");
+    r.h.get_by_label(&format!("○ {}", fw.display()));
+    assert!(r.h.query_by_label("Install from these files").is_none());
 }

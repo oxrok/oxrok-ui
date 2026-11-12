@@ -1,101 +1,10 @@
-//! Firmware families, bundled resources, and what an
-//! extraction needs.
+//! Bundled resources (firmware, decoders, Python), and the Install
+//! Firmware dialog's download or import job.
 
+use crate::backend::fetch;
+use parking_lot::Mutex;
 use std::path::{Path, PathBuf};
-
-/// One row of the table.
-#[derive(Copy, Clone, Debug, PartialEq, Eq)]
-pub struct Family {
-    /// Missing file names starting with this belong to the family.
-    pub prefix: &'static str,
-    pub title: &'static str,
-    /// Under the bundled `sigrok-util/firmware/`; `None`: manual only.
-    pub script: Option<&'static str>,
-    /// What the script takes (step 1).
-    pub input: &'static str,
-    pub needs: &'static [&'static str],
-    /// The device's sigrok wiki page.
-    pub wiki: &'static str,
-}
-
-pub const FAMILIES: [Family; 8] = [
-    Family {
-        prefix: "kingst-la",
-        title: "Kingst LA",
-        script: Some("kingst-la/sigrok-fwextract-kingst-la2016"),
-        input: "The KingstVIS executable",
-        needs: &["python3"],
-        wiki: "https://sigrok.org/wiki/Kingst_LA2016",
-    },
-    Family {
-        prefix: "saleae-logic16",
-        title: "Saleae Logic16",
-        script: Some("saleae-logic16/sigrok-fwextract-saleae-logic16"),
-        input: "The Logic 1.2.x executable",
-        needs: &["python3"],
-        wiki: "https://sigrok.org/wiki/Saleae_Logic16",
-    },
-    Family {
-        prefix: "hantek-",
-        title: "Hantek DSO",
-        script: Some("hantek-dso/sigrok-fwextract-hantek-dso"),
-        input: "The Hantek Windows driver (.sys)",
-        needs: &["python3"],
-        wiki: "https://sigrok.org/wiki/Hantek_DSO-2090",
-    },
-    Family {
-        prefix: "sysclk-lwla1016",
-        title: "Sysclk LWLA1016",
-        script: Some("sysclk-lwla/sigrok-fwextract-sysclk-lwla1016"),
-        input: "The LWLA1016 installation folder",
-        needs: &["sh", "sha256sum", "dd"],
-        wiki: "https://sigrok.org/wiki/Sysclk_LWLA1016",
-    },
-    Family {
-        prefix: "sysclk-lwla1034",
-        title: "Sysclk LWLA1034",
-        script: Some("sysclk-lwla/sigrok-fwextract-sysclk-lwla1034"),
-        input: "lwla1034_EN_setup.exe from the CD-ROM",
-        needs: &["sh", "sha256sum", "dd"],
-        wiki: "https://sigrok.org/wiki/Sysclk_LWLA1034",
-    },
-    Family {
-        prefix: "lecroy-logicstudio",
-        title: "LeCroy LogicStudio",
-        script: Some("lecroy-logicstudio/sigrok-fwextract-lecroy-logicstudio"),
-        input: "The LogicStudio firmware file",
-        needs: &["python3"],
-        wiki: "https://sigrok.org/wiki/LeCroy_LogicStudio",
-    },
-    Family {
-        prefix: "dreamsourcelab-dslogic",
-        title: "DSLogic",
-        script: None,
-        input: "The DSView firmware files",
-        needs: &[],
-        wiki: "https://sigrok.org/wiki/DreamSourceLab_DSLogic",
-    },
-    Family {
-        prefix: "fx2lafw-",
-        title: "fx2lafw (open firmware)",
-        script: None,
-        input: "The sigrok-firmware-fx2lafw package",
-        needs: &[],
-        wiki: "https://sigrok.org/wiki/Fx2lafw",
-    },
-];
-
-/// The family of a missing file; unknown files get a manual-only entry.
-pub fn family_of(file: &str) -> Family {
-    FAMILIES.iter().copied().find(|f| file.starts_with(f.prefix)).unwrap_or(Family {
-        prefix: "",
-        title: "this device",
-        script: None,
-        input: "The vendor's software",
-        needs: &[],
-        wiki: "https://sigrok.org/wiki/Supported_hardware",
-    })
-}
+use std::sync::atomic::{AtomicBool, Ordering};
 
 /// Where the bundled resources are, if anywhere.
 pub fn resource_dir() -> Option<PathBuf> {
@@ -107,15 +16,7 @@ pub fn resource_dir() -> Option<PathBuf> {
         .iter()
         .flat_map(|d| [d.join("../Resources"), d.join("../share/oxrok-ui"), d.join("../share/logic-analyzer")])
         .chain(std::iter::once(Path::new(env!("CARGO_MANIFEST_DIR")).join("vendor")));
-    candidates
-        .into_iter()
-        .find(|d| d.join("sigrok-util").is_dir() || d.join("sigrok-firmware").is_dir() || d.join("decoders").is_dir())
-}
-
-/// The bundled script for `family`, if it is there.
-pub fn script_path(family: &Family) -> Option<PathBuf> {
-    let p = resource_dir()?.join("sigrok-util/firmware").join(family.script?);
-    p.is_file().then_some(p)
+    candidates.into_iter().find(|d| d.join("sigrok-firmware").is_dir() || d.join("decoders").is_dir())
 }
 
 /// The bundled open firmware, for `SIGROK_FIRMWARE_DIR`.
@@ -160,58 +61,156 @@ pub unsafe fn apply_bundle_env() {
     }
 }
 
-/// The tools of `needs` that aren't on `PATH`.
-pub fn missing_tools(needs: &[&str]) -> Vec<String> {
-    let path = std::env::var_os("PATH").unwrap_or_default();
-    needs
-        .iter()
-        .filter(|t| {
-            let exe = format!("{t}{}", std::env::consts::EXE_SUFFIX);
-            !std::env::split_paths(&path).any(|d| d.join(t).is_file() || d.join(&exe).is_file())
-        })
-        .map(|t| (*t).to_owned())
-        .collect()
-}
-
-/// An install hint for a missing tool.
-pub fn install_hint(tool: &str) -> String {
-    let mac = cfg!(target_os = "macos");
-    match tool {
-        "sha256sum" if mac => "brew install coreutils".into(),
-        "python3" if mac => "brew install python".into(),
-        t if mac => format!("brew install {t}"),
-        t => format!("sudo apt install {t}"),
+/// A download size: "27.8 MB", "334 kB".
+pub fn human_size(bytes: u64) -> String {
+    if bytes >= 1 << 20 {
+        format!("{:.1} MB", bytes as f64 / f64::from(1u32 << 20))
+    } else {
+        format!("{} kB", bytes.div_ceil(1024))
     }
 }
 
-/// The user firmware dir among libsigrok's search paths: the one under
-/// the home folder, else `~/.local/share/sigrok-firmware`.
-pub fn user_firmware_dir(paths: &[(PathBuf, bool)]) -> PathBuf {
-    let home = std::env::var_os("HOME").map(PathBuf::from);
-    paths
-        .iter()
-        .map(|p| p.0.clone())
-        .find(|p| home.as_ref().is_some_and(|h| p.starts_with(h)))
-        .or_else(|| paths.first().map(|p| p.0.clone()))
-        .unwrap_or_else(|| home.unwrap_or_default().join(".local/share/sigrok-firmware"))
+/// What a [`Job`] does.
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
+pub(crate) enum JobKind {
+    Download,
+    Import,
+}
+
+/// A firmware download or import: the worker thread reports into it as
+/// the fetch's [`fetch::Progress`], and the dialog reads it each frame
+/// and cancels it.
+pub(crate) struct Job {
+    pub kind: JobKind,
+    /// Bytes to download; 0 for an import.
+    total: u64,
+    cancel: AtomicBool,
+    state: Mutex<JobState>,
+    /// Wakes the UI.
+    repaint: Box<dyn Fn() + Send + Sync>,
+}
+
+#[derive(Default)]
+struct JobState {
+    log: Vec<String>,
+    /// The download in progress, its bytes so far, and the bytes of the
+    /// downloads before it.
+    name: String,
+    done: u64,
+    before: u64,
+    result: Option<Result<fetch::Installed, fetch::Error>>,
+}
+
+impl std::fmt::Debug for Job {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Job").field("kind", &self.kind).field("finished", &self.finished()).finish_non_exhaustive()
+    }
+}
+
+impl Job {
+    pub fn new(kind: JobKind, total: u64, repaint: impl Fn() + Send + Sync + 'static) -> Self {
+        Self { kind, total, cancel: AtomicBool::new(false), state: Mutex::default(), repaint: Box::new(repaint) }
+    }
+
+    /// Asks the worker to stop. A cancelled fetch installs nothing.
+    pub fn cancel(&self) {
+        self.cancel.store(true, Ordering::SeqCst);
+    }
+
+    pub fn finish(&self, result: Result<fetch::Installed, fetch::Error>) {
+        self.state.lock().result = Some(result);
+        (self.repaint)();
+    }
+
+    pub fn finished(&self) -> bool {
+        self.state.lock().result.is_some()
+    }
+
+    /// The downloaded bytes and their total, once a download reported.
+    pub fn downloaded(&self) -> Option<(u64, u64)> {
+        let s = self.state.lock();
+        let done = s.before + s.done;
+        (self.total > 0 && !s.name.is_empty()).then(|| (done.min(self.total), self.total))
+    }
+
+    pub fn log(&self) -> String {
+        self.state.lock().log.join("\n")
+    }
+
+    /// Reads the result, when there is one.
+    pub fn with_result<T>(&self, f: impl FnOnce(&Result<fetch::Installed, fetch::Error>) -> T) -> Option<T> {
+        self.state.lock().result.as_ref().map(f)
+    }
+}
+
+impl fetch::Progress for Job {
+    fn message(&self, msg: &str) {
+        self.state.lock().log.push(msg.to_owned());
+        (self.repaint)();
+    }
+
+    fn download(&self, name: &str, done: u64, total: u64) {
+        let mut s = self.state.lock();
+        if s.name != name {
+            // The next file.
+            s.before += s.done;
+            s.name = name.to_owned();
+        }
+        s.done = done.min(total);
+        drop(s);
+        (self.repaint)();
+    }
+
+    fn cancelled(&self) -> bool {
+        self.cancel.load(Ordering::SeqCst)
+    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use fetch::Progress;
 
     #[test]
-    fn families_by_file() {
-        assert_eq!(family_of("kingst-la2016a1-fpga.bitstream").title, "Kingst LA");
-        assert_eq!(family_of("sysclk-lwla1034-int.rbf").title, "Sysclk LWLA1034");
-        assert_eq!(family_of("fx2lafw-saleae-logic.fw").script, None);
-        assert_eq!(family_of("odd.bin").title, "this device");
-        assert!(missing_tools(&["surely-not-a-tool-xyz"]) == ["surely-not-a-tool-xyz"]);
-        // `sh` is a Unix shell; it isn't on Windows, where the firmware
-        // scripts (and this check) don't apply.
-        #[cfg(not(target_os = "windows"))]
-        assert!(missing_tools(&["sh"]).is_empty());
-        let paths = [(PathBuf::from("/usr/share/sigrok-firmware"), true)];
-        assert_eq!(user_firmware_dir(&paths).file_name().unwrap(), "sigrok-firmware");
+    fn sizes() {
+        assert_eq!(human_size(29_160_040), "27.8 MB");
+        assert_eq!(human_size(341_160), "334 kB");
+        assert_eq!(human_size(1), "1 kB");
+    }
+
+    /// Bytes add up across a package's downloads, and Cancel reaches the
+    /// worker.
+    #[test]
+    fn job_progress() {
+        let job = Job::new(JobKind::Download, 300, || {});
+        assert_eq!(job.downloaded(), None);
+        job.download("a.fw", 50, 100);
+        assert_eq!(job.downloaded(), Some((50, 300)));
+        job.download("a.fw", 100, 100);
+        job.download("b.fw", 20, 200);
+        assert_eq!(job.downloaded(), Some((120, 300)));
+        job.message("Extracting");
+        assert_eq!(job.log(), "Extracting");
+        assert!(!job.cancelled() && !job.finished());
+        job.cancel();
+        assert!(job.cancelled());
+        job.finish(Err(fetch::Error::Cancelled));
+        assert_eq!(job.with_result(|r| r.is_err()), Some(true));
+    }
+
+    /// The real thing, over the network, with a `Job` as its progress:
+    /// `cargo test --lib -- --ignored downloads_for_real`.
+    #[test]
+    #[ignore = "downloads 54 kB from sigrok.org"]
+    fn downloads_for_real() {
+        let pkg = fetch::package("fx2lafw").unwrap();
+        let (cache, dest) = (tempfile::tempdir().unwrap(), tempfile::tempdir().unwrap());
+        let job = Job::new(JobKind::Download, pkg.download_size(), || {});
+        let options = fetch::Options { cache_dir: cache.path().to_owned(), progress: &job };
+        let installed = fetch::fetch(pkg, dest.path(), &options).unwrap();
+        assert_eq!(installed.files.len(), pkg.files.len());
+        assert!(dest.path().join("fx2lafw-saleae-logic.fw").is_file());
+        assert_eq!(job.downloaded(), Some((pkg.download_size(), pkg.download_size())));
+        eprintln!("{}", job.log());
     }
 }

@@ -3,8 +3,8 @@
 
 oxrok and RustPython are in the binary, so there are no libraries to copy.
 Resources: the decoders of a libsigrokdecode installation (oxrok runs them
-on RustPython), vendor/ firmware (make firmware-deps) and the sigrok-util
-extraction scripts. Signs ad-hoc and makes a .dmg.
+on RustPython) and vendor/ firmware (make firmware-deps). Signs ad-hoc and
+makes a .dmg.
 
     bundle.py --bin target/release/oxrok-ui --version 0.11.0 --out dist [--vendor vendor] [--sign "Developer ID Application: …"] [--cli target/oxrok-cli/bin/oxrok]
 
@@ -94,8 +94,6 @@ def main():
             shutil.copytree(share, fw, dirs_exist_ok=True)
     if (a.vendor / "sigrok-firmware").is_dir():
         shutil.copytree(a.vendor / "sigrok-firmware", fw, dirs_exist_ok=True)
-    if (a.vendor / "sigrok-util").is_dir():
-        shutil.copytree(a.vendor / "sigrok-util", res / "sigrok-util", ignore=shutil.ignore_patterns(".git"))
 
     # Sign each Mach-O leaf first, then the app (ad-hoc without --sign).
     identity = a.sign or "-"

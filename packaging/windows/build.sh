@@ -30,7 +30,6 @@ cp -r /mingw64/share/libsigrokdecode/decoders "$SHARE/decoders"
 mkdir -p "$SHARE/sigrok-firmware"
 [ -d /mingw64/share/sigrok-firmware ] && cp -r /mingw64/share/sigrok-firmware/. "$SHARE/sigrok-firmware/"
 [ -d vendor/sigrok-firmware ] && cp -r vendor/sigrok-firmware/. "$SHARE/sigrok-firmware/"
-[ -d vendor/sigrok-util ] && cp -r vendor/sigrok-util "$SHARE/sigrok-util" && rm -rf "$SHARE/sigrok-util/.git"
 
 "$STAGE/bin/oxrok-ui.exe" --self-test
 

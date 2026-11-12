@@ -206,7 +206,8 @@ impl Backend for MockBackend {
     }
 
     /// A download without the network: reports each of the package's
-    /// downloads in two halves, then writes a stand-in for every file.
+    /// downloads in two halves, then writes a stand-in for every file. One
+    /// that stalls stays half way until it is cancelled.
     fn fetch_firmware(
         &self,
         pkg: &'static fetch::Package,
@@ -215,18 +216,14 @@ impl Backend for MockBackend {
     ) -> Result<fetch::Installed, fetch::Error> {
         for d in pkg.downloads {
             progress.message(&format!("Downloading {}", d.name));
-            for done in [d.size / 2, d.size] {
-                if progress.cancelled() {
-                    return Err(fetch::Error::Cancelled);
-                }
-                progress.download(d.name, done, d.size);
+            progress.download(d.name, d.size / 2, d.size);
+            while self.options.firmware_download_stalls && !progress.cancelled() {
+                std::thread::sleep(std::time::Duration::from_millis(2));
             }
-        }
-        while self.options.firmware_download_stalls && !progress.cancelled() {
-            std::thread::sleep(std::time::Duration::from_millis(2));
-        }
-        if progress.cancelled() {
-            return Err(fetch::Error::Cancelled);
+            if progress.cancelled() {
+                return Err(fetch::Error::Cancelled);
+            }
+            progress.download(d.name, d.size, d.size);
         }
         std::fs::create_dir_all(dest)?;
         let mut installed = fetch::Installed::default();

@@ -485,6 +485,8 @@ impl LaApp {
     }
 
     pub(crate) fn install_firmware_dialog(&mut self, ctx: &Context) {
+        /// A button's height: text beside one is centred on it.
+        const ROW_H: f32 = 36.0;
         let Some(mut d) = self.ui.install_firmware.take() else { return };
         let theme = ctx.la_theme();
         let install_dir = self.firmware.install_dir.clone();
@@ -523,6 +525,7 @@ impl LaApp {
                         caution(ui, no_unpacker);
                     }
                     ui.horizontal(|ui| {
+                        ui.set_min_height(ROW_H);
                         if running == Some(JobKind::Download) {
                             let (done, total) = d.job.as_ref().and_then(|j| j.downloaded()).unwrap_or((0, 1));
                             let text = format!("{} / {}", human_size(done), human_size(total));
@@ -559,7 +562,7 @@ impl LaApp {
                     Frame::new()
                         .stroke(egui::Stroke::new(1.0, theme.color(Token::Seam)))
                         .corner_radius(4)
-                        .inner_margin(Margin::symmetric(8, 6))
+                        .inner_margin(Margin::symmetric(8, 10))
                         .show(ui, |ui| {
                             ui.set_width(340.0);
                             if d.inputs.is_empty() {
@@ -631,6 +634,7 @@ impl LaApp {
                                 caution(ui, w);
                             }
                             ui.horizontal(|ui| {
+                                ui.set_min_height(ROW_H);
                                 dim(ui, tr("Replug the device if it isn't found."));
                                 if ui.add(Button::secondary(tr("Rescan"))).clicked() {
                                     rescan = true;

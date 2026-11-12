@@ -175,10 +175,33 @@ impl egui::DroppedFile for Dropped {
     }
 }
 
-/// The app with `file` missing for `driver`, installs going to a
-/// temporary folder, and Install Firmware open from the Devices menu.
-fn firmware_rig(driver: &str, file: &str, stalls: bool) -> (Rig, tempfile::TempDir, std::path::PathBuf) {
-    let dir = tempfile::tempdir().unwrap();
+/// A folder of its own for a test, `target/kittest/<name>`, removed at
+/// the end. Its path is relative, so it reads the same in the snapshots
+/// on every machine.
+struct Scratch(std::path::PathBuf);
+
+impl Scratch {
+    fn new(name: &str) -> Self {
+        let dir = std::path::Path::new("target/kittest").join(name);
+        let _ = std::fs::remove_dir_all(&dir);
+        Self(dir)
+    }
+
+    fn path(&self) -> &std::path::Path {
+        &self.0
+    }
+}
+
+impl Drop for Scratch {
+    fn drop(&mut self) {
+        let _ = std::fs::remove_dir_all(&self.0);
+    }
+}
+
+/// The app with `file` missing for `driver`, installs going to the
+/// folder of test `name`, and Install Firmware open from the Devices menu.
+fn firmware_rig(name: &str, driver: &str, file: &str, stalls: bool) -> (Rig, Scratch, std::path::PathBuf) {
+    let dir = Scratch::new(name);
     let fw = dir.path().join("oxrok-firmware");
     let mut r = rig_with(MockOptions {
         missing_firmware: Some((driver.into(), file.into())),
@@ -229,29 +252,34 @@ fn rescan_clears_the_warning(r: &mut Rig) {
 #[test]
 fn install_firmware_downloads_the_package() {
     let file = "kingst-la2016a1-fpga.bitstream";
-    let (mut r, _dir, fw) = firmware_rig("kingst-la2016", file, false);
+    let (mut r, _dir, fw) = firmware_rig("download", "kingst-la2016", file, false);
     let pkg = oxrok_ui::backend::fetch::package_for(file).unwrap();
     r.h.get_by_label(pkg.title);
     r.h.get_by_label("27.8 MB from res.kingst.site, www.qdkingst.com");
     // The vendor's program, for those who have it already.
     r.h.get_by_label("Or use files you have");
     r.h.get_by_label_contains("the KingstVIS program");
+    r.h.snapshot("install_firmware");
     r.h.get_by_label("Download and install").click();
     wait_for(&mut r, &format!("Installed {} files", pkg.files.len()));
     r.h.get_by_label_contains(&format!("Downloading {}", pkg.downloads[0].name));
+    r.h.snapshot("install_firmware_done");
     assert!(pkg.files.iter().all(|f| fw.join(f).is_file()));
     rescan_clears_the_warning(&mut r);
 }
 
-/// Cancel stops a download, and nothing is installed.
+/// A download shows how far it is; Cancel stops it, and nothing is
+/// installed.
 #[test]
 fn install_firmware_download_cancels() {
     let file = "kingst-la2016a1-fpga.bitstream";
-    let (mut r, _dir, fw) = firmware_rig("kingst-la2016", file, true);
+    let (mut r, _dir, fw) = firmware_rig("cancel", "kingst-la2016", file, true);
     r.h.get_by_label("Download and install").click();
-    wait_for(&mut r, "27.8 MB / 27.8 MB");
+    wait_for(&mut r, "13.9 MB / 27.8 MB");
+    r.h.snapshot("install_firmware_downloading");
     r.h.get_by_label("Cancel").click();
     wait_for(&mut r, "Cancelled. Nothing was installed.");
+    r.h.snapshot("install_firmware_cancelled");
     assert!(!fw.exists());
     // The download can start again.
     r.h.get_by_label("Download and install");
@@ -266,22 +294,24 @@ fn install_firmware_download_cancels() {
 #[test]
 fn install_firmware_from_the_users_files() {
     let file = "fx2lafw-usb-c-grok.fw";
-    let (mut r, dir, fw) = firmware_rig("fx2lafw", file, false);
+    let (mut r, dir, fw) = firmware_rig("files", "fx2lafw", file, false);
     let pkg = oxrok_ui::backend::fetch::package_for(file).unwrap();
     r.h.get_by_label(pkg.title);
     r.h.get_by_label("Use files you have");
     r.h.get_by_label_contains("built from fx2lafw's git");
     assert!(r.h.query_by_label("Download and install").is_none());
     let built = dir.path().join("sigrok-firmware-fx2lafw");
-    std::fs::create_dir(&built).unwrap();
+    std::fs::create_dir_all(&built).unwrap();
     for f in pkg.files {
         std::fs::write(built.join(f), b"fw").unwrap();
     }
     r.h.input_mut().dropped_files.push(Arc::new(Dropped(built.clone())));
     r.h.run();
     r.h.get_by_label(&built.display().to_string());
+    r.h.snapshot("install_firmware_files");
     r.h.get_by_label("Install from these files").click();
     wait_for(&mut r, "Installed 2 files");
+    r.h.snapshot("install_firmware_files_done");
     assert_eq!(std::fs::read(fw.join(file)).unwrap(), b"fw");
     rescan_clears_the_warning(&mut r);
 }
@@ -308,6 +338,7 @@ fn start_failure_offers_the_firmware() {
     r.h.key_press(Key::Space);
     wait_for(&mut r, &format!("firmware not found: {file}"));
     r.h.get_by_label("Could not begin the capture.");
+    r.h.snapshot("firmware_toast");
     r.h.get_by_label("Install…").click();
     r.h.run();
     r.h.get_by_label("Install firmware");
@@ -318,8 +349,9 @@ fn start_failure_offers_the_firmware() {
 /// A file no package provides: the dialog lists the firmware folders.
 #[test]
 fn install_firmware_without_a_known_source() {
-    let (r, _dir, fw) = firmware_rig("odd-driver", "odd.bin", false);
+    let (mut r, _dir, fw) = firmware_rig("unknown", "odd-driver", "odd.bin", false);
     r.h.get_by_label_contains("No source is known for this file.");
     r.h.get_by_label(&format!("○ {}", fw.display()));
+    r.h.snapshot("install_firmware_unknown");
     assert!(r.h.query_by_label("Install from these files").is_none());
 }

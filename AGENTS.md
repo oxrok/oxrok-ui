@@ -30,6 +30,12 @@ UPDATE_SNAPSHOTS=1 cargo test --features mock   # accept new kittest snapshots (
 - **oxrok contexts:** none; drivers are plain Rust objects and any number
   of `OxrokBackend`s may exist.
 
+## Pull requests
+
+- **Diagram:** every pull request description has a diagram of what the
+  change does: the flow, the states or the structure it touches. Write it
+  as a Mermaid code block, which GitHub renders.
+
 ## Local test hardware (this machine)
 
 The lab bench has a real logic analyzer and an ESP32 signal generator

@@ -42,8 +42,10 @@ pub struct DigitalTrigger {
     /// Levels other channels must have at the trigger instant.
     pub linked: Vec<(ChannelId, bool)>,
     pub post_trigger_seconds: f64,
-    /// Buffered devices only: data to keep before the trigger.
-    /// Streaming devices keep everything (subject to the memory policy).
+    /// Data to keep before the trigger, where the device waits for it:
+    /// a buffered device, or one whose own trigger takes this one. A
+    /// streaming device the app scans keeps everything (subject to the
+    /// memory policy).
     pub pre_trigger_seconds: f64,
 }
 
@@ -73,6 +75,18 @@ impl DigitalTrigger {
         let ch_ok = self.channel.is_some_and(|c| enabled.contains(&c));
         let pulse_ok = !self.event.is_pulse() || (0.0 <= self.pulse_min && self.pulse_min <= self.pulse_max);
         ch_ok && pulse_ok && self.pre_trigger_seconds >= 0.0
+    }
+
+    /// The pulse widths that qualify, in samples at `rate`, both ends
+    /// inclusive. `None` when no whole number of samples is in the range.
+    pub fn pulse_samples(&self, rate: u64) -> Option<(u64, u64)> {
+        // Slack for the rounding of seconds × rate: a width of exactly
+        // `pulse_min` or `pulse_max` counts.
+        const SLACK: f64 = 1e-9;
+        let rate = rate as f64;
+        let min = (self.pulse_min * rate * (1.0 - SLACK)).ceil().max(1.0);
+        let max = (self.pulse_max * rate * (1.0 + SLACK)).floor();
+        (min <= max).then_some((min as u64, max as u64))
     }
 
     /// A disabled channel moves to the lowest enabled digital one;
@@ -111,5 +125,20 @@ mod tests {
         assert_eq!(t.channel, Some(ChannelId::digital(1)));
         assert_eq!(t.linked, [(ChannelId::digital(3), true)]);
         assert_eq!(DigitalTrigger::reset(&[ChannelId::analog(0)]).channel, None);
+    }
+
+    #[test]
+    fn pulse_widths_in_samples() {
+        let t = |min, max| DigitalTrigger { pulse_min: min, pulse_max: max, ..DigitalTrigger::default() };
+        // The defaults, 1 ms to 10 ms: both ends count.
+        assert_eq!(t(1e-3, 10e-3).pulse_samples(1_000_000), Some((1_000, 10_000)));
+        assert_eq!(t(1e-3, 10e-3).pulse_samples(24_000_000), Some((24_000, 240_000)));
+        // Between samples: the whole widths inside.
+        assert_eq!(t(2.5e-6, 4.5e-6).pulse_samples(1_000_000), Some((3, 4)));
+        // A pulse is at least one sample.
+        assert_eq!(t(0.0, 3e-6).pulse_samples(1_000_000), Some((1, 3)));
+        // Nothing fits: below a sample, or between two.
+        assert_eq!(t(0.0, 0.4e-6).pulse_samples(1_000_000), None);
+        assert_eq!(t(2.2e-6, 2.8e-6).pulse_samples(1_000_000), None);
     }
 }

@@ -14,6 +14,7 @@ struct Collected {
     ingest: Option<LogicIngest>,
     packets: usize,
     analog: std::collections::BTreeMap<ChannelId, Vec<f32>>,
+    trigger: Option<u64>,
     end: Option<EndReason>,
 }
 
@@ -38,7 +39,9 @@ impl SampleSink for Collect {
         assert_eq!(v.len() as u64, first, "analog samples are contiguous");
         v.extend_from_slice(volts);
     }
-    fn on_hw_trigger(&mut self, _: u64) {}
+    fn on_hw_trigger(&mut self, sample: u64) {
+        self.0.lock().unwrap().trigger = Some(sample);
+    }
     fn on_frame(&mut self, _: bool) {}
     fn on_end(&mut self, reason: EndReason) {
         self.0.lock().unwrap().end = Some(reason);
@@ -131,6 +134,91 @@ fn capture_fixed_samples_into_store() {
         transitions,
         c.header.as_ref().unwrap().logic_unit_size
     );
+}
+
+/// The demo with its counter pattern: channel `k` is high for `2^k`
+/// samples and low for as many.
+fn counter_demo() -> Box<dyn Device> {
+    let (backend, info) = demo();
+    let mut dev = backend.open(&info.id).unwrap();
+    let mut cfg = DeviceConfig::new((0..8).map(ChannelId::digital).collect(), 1_000_000);
+    cfg.options
+        .entry(OptionScope::Group("Logic".into()))
+        .or_default()
+        .insert("pattern".into(), ConfValue::Str("incremental".into()));
+    let applied = dev.apply(&cfg).unwrap();
+    assert!(applied.rejected.is_empty(), "{:?}", applied.rejected);
+    dev
+}
+
+/// A pulse trigger in the device: the demo streams, and its trigger
+/// takes the width of the pulse an edge ends.
+#[test]
+fn pulse_trigger_in_the_device() {
+    use TriggerMatch::{Falling, One, Rising};
+    let d = ChannelId::digital;
+    let mut dev = counter_demo();
+    let caps = dev.capabilities().hw_trigger.clone().expect("the demo has a trigger");
+    assert!(caps.pulse && caps.capture_ratio, "{caps:?}");
+
+    // (edge channel, edge, widths, linked high channel) and the level
+    // the pulse has.
+    let cases = [
+        (3, Falling, (8, 8), 5, true),
+        (3, Rising, (8, 8), 5, false),
+        (2, Falling, (3, 5), 6, true),
+        (4, Rising, (1, 16), 7, false),
+    ];
+    for (ch, edge, widths, linked, pulse_level) in cases {
+        let sink = Collect::default();
+        let plan = AcquisitionPlan {
+            trigger: Some(HwTrigger {
+                matches: vec![(d(ch), edge), (d(linked), One)],
+                pulse_samples: Some(widths),
+                pre_trigger_percent: 50,
+            }),
+            ..AcquisitionPlan::new(AcquisitionLimit::Samples(2_000))
+        };
+        dev.start(plan, Box::new(sink.clone())).unwrap();
+        wait_end(&sink);
+        let c = sink.0.lock().unwrap();
+        let t = c.trigger.expect("the trigger fired");
+        let ingest = c.ingest.as_ref().unwrap();
+        let level = |ch: u16, at: u64| ingest.channels()[ch as usize].level_at(at).unwrap();
+        // The edge that ends the pulse is the trigger sample, the pulse
+        // is as wide as the channel's half period, and the linked
+        // channel is high there.
+        let width = 1u64 << ch;
+        assert!(t > width, "{ch} {edge:?}: the pulse's start is in the data (trigger at {t})");
+        assert_eq!(level(ch, t), !pulse_level, "{ch} {edge:?}");
+        for back in 1..=width {
+            assert_eq!(level(ch, t - back), pulse_level, "{ch} {edge:?}: {back} before the trigger");
+        }
+        assert_eq!(level(ch, t - width - 1), !pulse_level, "{ch} {edge:?}: before the pulse");
+        assert!(level(linked, t), "{ch} {edge:?}: D{linked} high at the trigger");
+        assert!(ingest.next_sample() > t, "{ch} {edge:?}: data after the trigger");
+        drop(c);
+        dev.stop().unwrap();
+    }
+
+    // No pulse of the counter is that wide: nothing arrives until Stop.
+    let sink = Collect::default();
+    let plan = AcquisitionPlan {
+        trigger: Some(HwTrigger {
+            matches: vec![(d(3), Falling)],
+            pulse_samples: Some((9, 15)),
+            pre_trigger_percent: 50,
+        }),
+        ..AcquisitionPlan::new(AcquisitionLimit::Samples(2_000))
+    };
+    dev.start(plan, Box::new(sink.clone())).unwrap();
+    std::thread::sleep(Duration::from_millis(200));
+    assert!(sink.0.lock().unwrap().end.is_none(), "still waiting for the trigger");
+    dev.stop().unwrap();
+    wait_end(&sink);
+    let c = sink.0.lock().unwrap();
+    assert_eq!(c.trigger, None);
+    assert!(c.ingest.is_none(), "no samples without a trigger");
 }
 
 #[test]

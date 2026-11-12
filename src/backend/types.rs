@@ -240,6 +240,8 @@ pub enum TriggerMatch {
 pub struct HwTriggerCaps {
     pub matches: Vec<TriggerMatch>,
     pub capture_ratio: bool,
+    /// An edge can carry the width of the pulse it ends.
+    pub pulse: bool,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -301,10 +303,14 @@ pub enum AcquisitionLimit {
     Millis(u64),
 }
 
-/// A hardware trigger: one stage, all matches must hold.
+/// The device's trigger: one stage, all matches must hold.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct HwTrigger {
     pub matches: Vec<(ChannelId, TriggerMatch)>,
+    /// The edge in `matches` must end a pulse this many samples wide, both
+    /// ends inclusive: a falling edge ends a high pulse, a rising edge a
+    /// low one. Needs [`HwTriggerCaps::pulse`].
+    pub pulse_samples: Option<(u64, u64)>,
     /// Share of the capture before the trigger, 0–100 % (`SR_CONF_CAPTURE_RATIO`).
     pub pre_trigger_percent: u8,
 }
@@ -312,7 +318,7 @@ pub struct HwTrigger {
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct AcquisitionPlan {
     pub limit: AcquisitionLimit,
-    /// Arm a hardware trigger; devices without one fail to start.
+    /// Arm the device's trigger; devices without one fail to start.
     pub trigger: Option<HwTrigger>,
     /// Device-side run-length compression where supported: buffered
     /// analyzers then cover longer stretches of slow signals.

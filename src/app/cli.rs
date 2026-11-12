@@ -152,9 +152,14 @@ impl Session {
         {
             device.push(threshold(t, caps));
         }
+        // The device's own trigger, where the app arms it too.
+        let device_trigger = (st.mode == CaptureMode::Triggered)
+            .then(|| crate::app::hw_trigger_for(&st.trigger, caps, 0, st.sample_rate))
+            .flatten();
         let triggered = st.mode == CaptureMode::Triggered;
         let buffered = caps.is_some_and(|c| !c.supports_continuous);
-        if triggered && buffered {
+        let ratio_set = caps.and_then(|c| c.hw_trigger.as_ref()).is_some_and(|t| t.capture_ratio);
+        if triggered && (buffered || (device_trigger.is_some() && ratio_set)) {
             let (pre, post) = (st.trigger.pre_trigger_seconds, st.trigger.post_trigger_seconds);
             let ratio = if pre + post > 0.0 { (pre / (pre + post) * 100.0).round() as u32 } else { 0 };
             device.push(format!("captureratio={ratio}"));
@@ -182,10 +187,19 @@ impl Session {
                 let mut conds = Vec::new();
                 let name = cli_name;
                 if let Some(ch) = t.channel.and_then(name) {
-                    match t.event {
-                        TriggerEvent::Rising => conds.push(format!("{ch}=r")),
-                        TriggerEvent::Falling => conds.push(format!("{ch}=f")),
-                        _ => comment = Some("pulse trigger: evaluated in the app".to_owned()),
+                    // A pulse is the edge that ends it, with the widths
+                    // in samples; both ends of `>a<b` are strict.
+                    let width = device_trigger.as_ref().and_then(|d| d.pulse_samples);
+                    let edge = match t.event {
+                        TriggerEvent::Rising | TriggerEvent::NegativePulse => 'r',
+                        TriggerEvent::Falling | TriggerEvent::PositivePulse => 'f',
+                    };
+                    match (t.event.is_pulse(), width) {
+                        (false, _) => conds.push(format!("{ch}={edge}")),
+                        (true, Some((min, max))) => {
+                            conds.push(format!("{ch}={edge}>{}<{}", min - 1, max.saturating_add(1)));
+                        }
+                        (true, None) => comment = Some("pulse trigger: evaluated in the app".to_owned()),
                     }
                 }
                 conds.extend(t.linked.iter().filter_map(|&(c, high)| Some(format!("{}={}", name(c)?, high as u8))));

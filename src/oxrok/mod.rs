@@ -15,7 +15,8 @@ mod log;
 use crate::backend::*;
 use crate::core::{ChannelId, ChannelKind, WallClock};
 use oxrok::core::{
-    Device as OxDevice, Driver, Key, Packet, PacketSink, Registry, Trigger, TriggerMatch as OxMatch, Value,
+    Device as OxDevice, Driver, Key, Packet, PacketSink, Registry, Trigger, TriggerDuration, TriggerMatch as OxMatch,
+    Value,
 };
 use parking_lot::Mutex;
 use std::collections::{BTreeMap, BTreeSet};
@@ -426,7 +427,8 @@ impl Drop for OxrokDevice {
     }
 }
 
-/// A one-stage trigger, after setting the capture ratio.
+/// A one-stage trigger, with the pulse width as the stage's duration,
+/// after setting the capture ratio.
 fn set_trigger(
     dev: &mut dyn OxDevice,
     trigger: Option<&HwTrigger>,
@@ -455,6 +457,9 @@ fn set_trigger(
             TriggerMatch::Edge => OxMatch::Edge,
         };
         trig.add(0, *pos, m);
+    }
+    if let Some((min, max)) = t.pulse_samples {
+        trig.set_duration(0, TriggerDuration::Between(min, max));
     }
     dev.set_trigger(Some(trig)).map_err(device_error)
 }

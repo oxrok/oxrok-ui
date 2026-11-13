@@ -67,6 +67,8 @@ pub struct MockOptions {
     pub firmware_dir: Option<std::path::PathBuf>,
     /// A firmware download never ends by itself: it waits for Cancel.
     pub firmware_download_stalls: bool,
+    /// An external unpacker is installed. A test may install one later.
+    pub unpacker: Arc<AtomicBool>,
 }
 
 impl Default for MockOptions {
@@ -97,6 +99,7 @@ impl Default for MockOptions {
             missing_firmware: None,
             firmware_dir: None,
             firmware_download_stalls: false,
+            unpacker: Arc::new(AtomicBool::new(true)),
         }
     }
 }
@@ -203,6 +206,10 @@ impl Backend for MockBackend {
         };
         let paths = dir.iter().map(|d| (d.clone(), d.exists())).collect();
         FirmwareStatus { missing, paths, install_dir: dir }
+    }
+
+    fn firmware_unpacker(&self) -> bool {
+        self.options.unpacker.load(Ordering::SeqCst)
     }
 
     /// A download without the network: reports each of the package's

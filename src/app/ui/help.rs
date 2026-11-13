@@ -1,6 +1,6 @@
 //! Device Connection Help and About.
 
-use crate::app::firmware::{Job, JobKind, human_size};
+use crate::app::firmware::{Job, JobKind, human_size, unpacker_hint};
 use crate::app::{APP_NAME, AppEvent, LaApp};
 use crate::backend::{DeviceInfo, MissingFirmware, fetch};
 use crate::l10n::tr;
@@ -37,8 +37,11 @@ pub(crate) struct InstallFirmware {
     pub inputs: Vec<PathBuf>,
     /// One of `inputs` is an archive only an external unpacker opens.
     pub inputs_packed: bool,
-    /// unar, 7-Zip or bsdtar is installed.
+    /// unar, 7-Zip or bsdtar is installed. Looked for when something
+    /// needs one, and again while none is there.
     pub unpacker: bool,
+    /// When it was last looked for, in egui's time.
+    pub unpacker_checked: f64,
     /// The download or import, running or finished.
     pub job: Option<Arc<Job>>,
 }
@@ -460,7 +463,8 @@ impl LaApp {
             package: fetch::package_for(file),
             inputs: Vec::new(),
             inputs_packed: false,
-            unpacker: fetch::unpacker().is_some(),
+            unpacker: false,
+            unpacker_checked: f64::NEG_INFINITY,
             job: None,
         });
     }
@@ -487,10 +491,21 @@ impl LaApp {
     pub(crate) fn install_firmware_dialog(&mut self, ctx: &Context) {
         /// A button's height: text beside one is centred on it.
         const ROW_H: f32 = 36.0;
+        const UNPACKER_RECHECK: std::time::Duration = std::time::Duration::from_secs(1);
         let Some(mut d) = self.ui.install_firmware.take() else { return };
         let theme = ctx.la_theme();
         let install_dir = self.firmware.install_dir.clone();
         let running = d.job.as_ref().filter(|j| !j.finished()).map(|j| j.kind);
+        // While an archive needs an unpacker and none is there, look
+        // again: the user may be installing one.
+        if !d.unpacker && (d.inputs_packed || d.package.is_some_and(fetch::Package::needs_unpacker)) {
+            let now = ctx.input(|i| i.time);
+            if now - d.unpacker_checked >= UNPACKER_RECHECK.as_secs_f64() {
+                d.unpacker = self.backend.firmware_unpacker();
+                d.unpacker_checked = now;
+            }
+            ctx.request_repaint_after(UNPACKER_RECHECK);
+        }
         let (mut close, mut cancel, mut rescan) = (false, false, false);
         // Browse for a folder (true) or files; the job to start.
         let (mut browse, mut start) = (None, None);
@@ -511,6 +526,7 @@ impl LaApp {
                 ui.label(egui::RichText::new(format!("! {text}")).color(theme.color(Token::Caution)));
             };
             let no_unpacker = tr("Unpacking this needs unar, 7-Zip or bsdtar, and none is installed.");
+            let how_to_get_one = tr(unpacker_hint(std::env::consts::OS));
             if let (Some(pkg), Some(dir)) = (d.package, &install_dir) {
                 heading(ui, pkg.title);
                 if let Some(note) = pkg.note {
@@ -525,6 +541,14 @@ impl LaApp {
                     let can_unpack = d.unpacker || !pkg.needs_unpacker();
                     if !can_unpack {
                         caution(ui, no_unpacker);
+                        dim(ui, how_to_get_one);
+                        dim(ui, tr("Or download it yourself, unpack it and use the folder below:"));
+                        for dl in pkg.downloads {
+                            if let Some(url) = dl.urls.first() {
+                                ui.hyperlink_to(format!("{} ↗", dl.name), *url);
+                            }
+                        }
+                        ui.add_space(4.0);
                     }
                     ui.horizontal(|ui| {
                         ui.set_min_height(ROW_H);
@@ -586,6 +610,8 @@ impl LaApp {
                 });
                 if d.inputs_packed && !d.unpacker {
                     caution(ui, no_unpacker);
+                    dim(ui, how_to_get_one);
+                    dim(ui, tr("Or unpack it yourself and use the folder."));
                 }
                 ui.add_space(4.0);
                 ui.horizontal(|ui| {

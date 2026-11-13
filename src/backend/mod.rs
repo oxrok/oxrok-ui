@@ -53,6 +53,12 @@ pub trait Backend: Send + Sync + 'static {
         fetch::fetch(pkg, dest, &fetch::Options { progress, ..fetch::Options::default() })
     }
 
+    /// Whether an external unpacker (unar, 7-Zip or bsdtar) is installed,
+    /// for the archives that need one.
+    fn firmware_unpacker(&self) -> bool {
+        fetch::unpacker().is_some()
+    }
+
     /// Installs `pkg`'s files from what the user has: the vendor's
     /// installer or program, archives, folders or the firmware files
     /// themselves. Blocks.

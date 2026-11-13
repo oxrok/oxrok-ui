@@ -72,6 +72,17 @@ pub fn names_file(text: &str, file: &str) -> bool {
         })
 }
 
+/// How to get an external unpacker on `os` (as `std::env::consts::OS`),
+/// in English. Windows: the firmware crate finds one only on `PATH`,
+/// which a running app doesn't see change.
+pub fn unpacker_hint(os: &str) -> &'static str {
+    match os {
+        "macos" => "To install one: brew install unar",
+        "windows" => "Install 7-Zip (winget install 7zip.7zip), add its folder to PATH and start the app again.",
+        _ => "To install one: sudo apt install unar, or sudo dnf install unar",
+    }
+}
+
 /// A download size: "27.8 MB", "334 kB".
 pub fn human_size(bytes: u64) -> String {
     if bytes >= 1 << 20 {

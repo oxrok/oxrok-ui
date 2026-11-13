@@ -4,7 +4,7 @@
 
 use egui::{Event, Key, Modifiers, OutputCommand};
 use egui_kittest::Harness;
-use egui_kittest::kittest::Queryable;
+use egui_kittest::kittest::{NodeT, Queryable};
 use oxrok_ui::app::dialogs::FixedDialogs;
 use oxrok_ui::app::{AppOptions, LaApp};
 use oxrok_ui::backend::{MockBackend, MockOptions};
@@ -206,13 +206,17 @@ impl Drop for Scratch {
 /// The app with `file` missing for `driver`, installs going to the
 /// folder of test `name`, and Install Firmware open from the Devices menu.
 fn firmware_rig(name: &str, driver: &str, file: &str, stalls: bool) -> (Rig, Scratch, std::path::PathBuf) {
+    firmware_rig_with(name, driver, file, MockOptions { firmware_download_stalls: stalls, ..MockOptions::default() })
+}
+
+/// The same, with other mock options too.
+fn firmware_rig_with(name: &str, driver: &str, file: &str, options: MockOptions) -> (Rig, Scratch, std::path::PathBuf) {
     let dir = Scratch::new(name);
     let fw = dir.path().join("oxrok-firmware");
     let mut r = rig_with(MockOptions {
         missing_firmware: Some((driver.into(), file.into())),
         firmware_dir: Some(fw.clone()),
-        firmware_download_stalls: stalls,
-        ..MockOptions::default()
+        ..options
     });
     r.h.get_by_label("Disconnected").click();
     r.h.run();
@@ -349,6 +353,37 @@ fn start_failure_offers_the_firmware() {
     r.h.get_by_label("Install firmware");
     r.h.get_by_label("Download and install");
     assert!(r.h.query_by_label("Could not begin the capture.").is_none(), "the toast is gone");
+}
+
+/// A download that only an external unpacker opens, with none installed:
+/// the dialog says how to get one, and notices when it is there.
+#[test]
+fn install_firmware_needs_an_unpacker() {
+    use std::sync::atomic::{AtomicBool, Ordering};
+    let unpacker = Arc::new(AtomicBool::new(false));
+    let options = MockOptions { unpacker: unpacker.clone(), ..MockOptions::default() };
+    let (mut r, _dir, fw) = firmware_rig_with("unpacker", "hantek-dso", "hantek-dso-5200A.fw", options);
+    let download = |r: &Rig| r.h.get_by_label("Download and install").accesskit_node().is_disabled();
+    r.h.get_by_label_contains("and none is installed.");
+    r.h.get_by_label(oxrok_ui::app::firmware::unpacker_hint(std::env::consts::OS));
+    r.h.get_by_label("DSO5200A-Win11.rar ↗");
+    assert!(download(&r), "nothing to unpack the download with");
+    // The hint is this platform's.
+    if cfg!(target_os = "linux") {
+        r.h.snapshot("install_firmware_no_unpacker");
+    }
+
+    unpacker.store(true, Ordering::SeqCst);
+    let t0 = std::time::Instant::now();
+    while r.h.query_by_label_contains("and none is installed.").is_some() {
+        assert!(t0.elapsed() < Duration::from_secs(10), "the unpacker wasn't noticed");
+        r.h.step();
+    }
+    r.h.run_steps(4);
+    assert!(!download(&r));
+    r.h.get_by_label("Download and install").click();
+    wait_for(&mut r, "Installed 1 file");
+    assert!(fw.join("hantek-dso-5200A.fw").is_file());
 }
 
 /// Another error doesn't take the file from a firmware toast still up:

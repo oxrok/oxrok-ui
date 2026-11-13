@@ -16,7 +16,7 @@ make test          # everything that needs no hardware (kittest UI tests, unit t
 make test-oxrok    # the oxrok backend, files and decoders, plus the app end-to-end tests
 make check         # rustfmt + clippy -D warnings, as in CI
 make screenshots   # regenerate docs/screenshots (README)
-make firmware-deps # sigrok-util firmware scripts + fx2lafw firmware into vendor/ (git-ignored)
+make firmware-deps # the fx2lafw firmware into vendor/ (git-ignored)
 make notices       # regenerate the About dialog's third-party notices
 make bundle        # macOS .app + .dmg in dist/ (ad-hoc signed); packaging/ has Linux and Windows
 make perf          # the performance budgets, in release
@@ -25,6 +25,9 @@ UPDATE_SNAPSHOTS=1 cargo test --features mock   # accept new kittest snapshots (
 
 - **Timing:** `cargo test --release --lib -- --ignored perf` checks
   the render budget.
+- **Firmware download:** `cargo test --lib -- --ignored downloads_for_real`
+  fetches the fx2lafw package (54 kB) from sigrok.org. The UI tests use
+  the mock's download.
 - **Driving time in tests:** the UI tests use a `ManualClock` shared by the
   app and the mock backend.
 - **oxrok contexts:** none; drivers are plain Rust objects and any number

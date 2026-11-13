@@ -114,6 +114,9 @@ make run                           # the app on oxrok (release; PROFILE=dev for 
 - Markers and measurements: `M`, `Shift+M`, `R`
 - Decode a protocol: the toolbar hexagon or the Analyzers panel
 - Save / open: `Ctrl/Cmd+S` / `Ctrl/Cmd+O` (`.oxrok`)
+- Firmware a device is missing: the **Devices** menu → *Install…*
+  downloads it from the vendor, or takes it from the vendor's software
+  if you have it
 - All shortcuts: `?` (with search); any command: `Ctrl/Cmd+K`
 
 To update UI snapshots, run `UPDATE_SNAPSHOTS=1 cargo test --features mock`.

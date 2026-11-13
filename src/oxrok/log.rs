@@ -1,16 +1,23 @@
 //! oxrok's log, kept on stderr, watched for firmware files a
 //! driver failed to load.
 //!
-//! oxrok reports a missing file as `firmware file not found: NAME (hint)`;
-//! the driver that was scanning or opening at the time owns it, as with
-//! libsigrok's messages.
+//! oxrok reports a missing file as `firmware file not found: NAME (hint)`.
+//! The driver this thread was scanning or opening at the time owns the
+//! miss, as with libsigrok's messages; one from elsewhere (a device that
+//! loads its firmware when a capture starts, another thread) has no
+//! driver.
 
 use crate::backend::MissingFirmware;
+use oxrok::core::firmware;
 use parking_lot::Mutex;
+use std::cell::RefCell;
 use std::sync::Once;
 
-/// The driver being scanned or opened, whose failures are recorded.
-static CURRENT: Mutex<Option<String>> = Mutex::new(None);
+thread_local! {
+    /// The driver this thread is scanning or opening, whose failures are
+    /// recorded. Per thread: a scan and a capture start may overlap.
+    static CURRENT: RefCell<Option<String>> = const { RefCell::new(None) };
+}
 static MISSING: Mutex<Vec<MissingFirmware>> = Mutex::new(Vec::new());
 
 struct Logger;
@@ -21,17 +28,10 @@ impl log::Log for Logger {
     }
 
     fn log(&self, record: &log::Record) {
-        if !self.enabled(record.metadata()) {
-            return;
-        }
-        let msg = record.args().to_string();
-        eprintln!("oxrok: {msg}");
-        if let (Some(file), Some(driver)) = (missing_file(&msg), CURRENT.lock().clone()) {
-            let m = MissingFirmware { driver, file };
-            let mut list = MISSING.lock();
-            if !list.contains(&m) {
-                list.push(m);
-            }
+        if self.enabled(record.metadata()) {
+            let msg = record.args().to_string();
+            eprintln!("oxrok: {msg}");
+            note(&msg);
         }
     }
 
@@ -47,23 +47,50 @@ pub(crate) fn install() {
     });
 }
 
+/// Adds `files` to `list` for `driver` (empty: unknown). A file with no
+/// driver and the same file with one are the same miss.
+fn record(list: &mut Vec<MissingFirmware>, driver: &str, files: Vec<String>) {
+    for file in files {
+        let same = |m: &&mut MissingFirmware| {
+            m.file == file && (m.driver == driver || m.driver.is_empty() || driver.is_empty())
+        };
+        match list.iter_mut().find(same) {
+            Some(m) if m.driver.is_empty() => driver.clone_into(&mut m.driver),
+            Some(_) => {}
+            None => list.push(MissingFirmware { driver: driver.to_owned(), file }),
+        }
+    }
+}
+
+/// Records the file `msg` reports as missing, if it is such a message,
+/// for this thread's current driver.
+pub(crate) fn note(msg: &str) {
+    if let Some(file) = missing_file(msg) {
+        let driver = CURRENT.with_borrow(|c| c.clone().unwrap_or_default());
+        record(&mut MISSING.lock(), &driver, vec![file]);
+    }
+}
+
 /// Records failures for `driver` until [`end`]; its earlier ones go.
 pub(crate) fn begin(driver: &str) {
     MISSING.lock().retain(|m| m.driver != driver);
-    *CURRENT.lock() = Some(driver.to_owned());
+    watch(driver);
 }
 
 pub(crate) fn end() {
-    *CURRENT.lock() = None;
+    CURRENT.set(None);
 }
 
 /// The same, but keeps the earlier failures (a device open).
 pub(crate) fn watch(driver: &str) {
-    *CURRENT.lock() = Some(driver.to_owned());
+    CURRENT.set(Some(driver.to_owned()));
 }
 
+/// The files still missing: one installed since is no longer.
 pub(crate) fn missing() -> Vec<MissingFirmware> {
-    MISSING.lock().clone()
+    let mut list = MISSING.lock();
+    list.retain(|m| firmware::find_file(&m.file).is_none());
+    list.clone()
 }
 
 /// The file a firmware failure names, if `msg` is one.
@@ -87,5 +114,40 @@ mod tests {
             Some("fx2lafw-cwav-usbeeax.fw".into())
         );
         assert_eq!(missing_file("Scan found 1 device"), None);
+    }
+
+    #[test]
+    fn misses_by_driver() {
+        let m = |driver: &str, file: &str| MissingFirmware { driver: driver.into(), file: file.into() };
+        let mut list = Vec::new();
+        record(&mut list, "fx2lafw", vec!["a.fw".into(), "b.fw".into()]);
+        record(&mut list, "fx2lafw", vec!["a.fw".into()]);
+        assert_eq!(list, [m("fx2lafw", "a.fw"), m("fx2lafw", "b.fw")]);
+        // Two drivers may need the same file.
+        record(&mut list, "saleae-logic16", vec!["a.fw".into()]);
+        assert_eq!(list.len(), 3);
+        // A miss outside a scan has no driver, until a scan names it.
+        record(&mut list, "", vec!["c.rbf".into(), "b.fw".into()]);
+        assert_eq!(list[3..], [m("", "c.rbf")]);
+        record(&mut list, "sysclk-lwla", vec!["c.rbf".into()]);
+        assert_eq!(list[3..], [m("sysclk-lwla", "c.rbf")]);
+    }
+
+    /// A miss on another thread (a capture start) during a scan isn't the
+    /// scanned driver's, so the driver's next scan doesn't drop it.
+    #[test]
+    fn the_driver_is_per_thread() {
+        let driver_of = |file: &str| missing().into_iter().find(|m| m.file == file).map(|m| m.driver);
+        begin("log-test-scanning");
+        note("firmware file not found: log-test-scan.fw (hint)");
+        std::thread::spawn(|| note("firmware file not found: log-test-start.fw (hint)")).join().unwrap();
+        end();
+        assert_eq!(driver_of("log-test-scan.fw").as_deref(), Some("log-test-scanning"));
+        assert_eq!(driver_of("log-test-start.fw").as_deref(), Some(""));
+        begin("log-test-scanning");
+        end();
+        assert_eq!(driver_of("log-test-scan.fw"), None);
+        assert_eq!(driver_of("log-test-start.fw").as_deref(), Some(""));
+        MISSING.lock().retain(|m| !m.file.starts_with("log-test-"));
     }
 }

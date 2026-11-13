@@ -47,6 +47,9 @@ log = { version = "0.4", features = ["std"] }
 # Pure Rust, with RustPython built in, so no C library and no Python
 # installation are needed.
 oxrok = { version = "=0.2.0", default-features = false, features = ["nusb", "rustpython"] }
+# The firmware registry: downloads what a device is missing over HTTPS
+# (ureq, rustls), or takes it from the vendor's software.
+oxrok-firmware-fetch = "0.2"
 serialport = { version = "4", default-features = false }
 
 # Cmd+Q must reach the app, not winit's default macOS menu.

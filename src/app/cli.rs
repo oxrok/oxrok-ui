@@ -266,6 +266,11 @@ impl Session {
                             }
                         }
                     }
+                    // The trigger is armed after the time to keep before
+                    // it; the command's fires on its first match.
+                    if device_trigger.as_ref().and_then(|e| e.device()).is_some_and(|hw| hw.holdoff > 0) {
+                        comment.get_or_insert_with(|| "the app arms the trigger after the pre-trigger time".to_owned());
+                    }
                     let position = |id| d.channels.iter().position(|c| c.id == id);
                     match trigger_spec(&hw, cli_name, position) {
                         Ok(spec) => words.extend(["-t".into(), quote(&spec)]),

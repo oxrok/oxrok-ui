@@ -208,6 +208,9 @@ fn stages_and_a_count_go_to_the_device() {
     let cap = s.capture.as_ref().unwrap().read();
     let t = cap.trigger.expect("the trigger");
     assert_eq!(cap.hw_trigger, Some(t), "the device's sample, as it is");
+    // The device armed its trigger after the 10 ms to keep before it.
+    let (begin, _) = cap.sample_range().unwrap();
+    assert!(t - begin >= 10_000, "{} samples before the trigger", t - begin);
     let (c2, c3) = (cap.channel(d2).unwrap(), cap.channel(d3).unwrap());
     assert_eq!((c2.level_at(t - 1), c2.level_at(t)), (Some(true), Some(false)), "D2 falls at the trigger");
     // The counter's D2 falls every 8 samples and D3 rises every 16, on

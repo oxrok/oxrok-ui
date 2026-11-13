@@ -509,6 +509,7 @@ impl Device for MockDevice {
                     or: caps.or,
                     and: caps.and,
                     max_stages: caps.max_stages,
+                    holdoff: caps.holdoff,
                 };
                 trigger.check(&features).map_err(|e| BackendError::Device(e.to_string()))?;
                 let matcher = ::oxrok::core::SoftTrigger::new(&trigger, unit_size)

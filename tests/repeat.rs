@@ -91,7 +91,9 @@ impl Rig {
     fn trigger_mode(&mut self) {
         pick_mode(&mut self.h, "Trigger");
         self.h.run_steps(3);
-        self.h.state_mut().session_mut().unwrap().settings.trigger.post_trigger_seconds = 0.01;
+        // Nothing asked for before the trigger: the first rise, at 1 ms.
+        let t = &mut self.h.state_mut().session_mut().unwrap().settings.trigger;
+        (t.pre_trigger_seconds, t.post_trigger_seconds) = (0.0, 0.01);
         self.h.get_by_role_and_label(Role::Button, "Repeat").click();
         self.h.run_steps(3);
         assert!(self.h.state().session().unwrap().settings.repeat);

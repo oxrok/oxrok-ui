@@ -31,6 +31,7 @@ fn full() -> HwTriggerCaps {
         range: true,
         or: true,
         and: true,
+        holdoff: true,
     }
 }
 
@@ -238,7 +239,9 @@ fn two_stages_and_details() {
     let cli = r.h.state().session().unwrap().cli_command().one_line();
     assert!(cli.contains(r#"-t "D0=r;D0=f*2""#), "{cli}");
 
-    // D0 rises at 1 ms (sample 8000); the second fall after is at 2.5 ms.
+    // The device arms its trigger after the 4 ms (32000 samples) to keep
+    // before it. D0 rises every 1 ms: at sample 32000, and its second
+    // fall after is at 44000. The capture is 29 % before the trigger.
     {
         let t = &mut r.h.state_mut().session_mut().unwrap().settings.trigger;
         (t.pre_trigger_seconds, t.post_trigger_seconds) = (0.004, 0.01);
@@ -246,11 +249,16 @@ fn two_stages_and_details() {
     r.record_until_done();
     let s = r.h.state().session().unwrap();
     let cap = s.capture.as_ref().unwrap().read();
-    assert_eq!(cap.hw_trigger, Some(20_000), "the device's trigger");
-    assert_eq!(cap.trigger, Some(20_000), "taken as it is: the scanner cannot tell which fall it was");
-    assert_eq!(s.trigger, Some(CaptureTime::from_sample(20_000, RATE)));
-    let (_, end) = cap.sample_range().unwrap();
-    assert!(end - 20_000 >= 80_000, "the post-trigger time: {end}");
+    let t = cap.hw_trigger.expect("the device's trigger");
+    assert_eq!(cap.trigger, Some(t), "taken as it is: the scanner cannot tell which fall it was");
+    assert_eq!(s.trigger, Some(CaptureTime::from_sample(t, RATE)));
+    let (begin, end) = cap.sample_range().unwrap();
+    assert!(t - begin >= 32_000, "the time before the trigger is there: {} samples", t - begin);
+    assert!(end - t >= 80_000, "the post-trigger time: {end}");
+    // A fall of D0, 1.5 ms after a rise that the capture has too.
+    let d0 = cap.channel(D0).unwrap();
+    assert_eq!((d0.level_at(t - 1), d0.level_at(t)), (Some(true), Some(false)));
+    assert_eq!((d0.level_at(t - 12_001), d0.level_at(t - 12_000)), (Some(false), Some(true)));
 }
 
 /// Trigger Details from the Device tab: the stage in words, a pulse

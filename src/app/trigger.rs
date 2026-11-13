@@ -183,7 +183,7 @@ pub(crate) fn lower(t: &DigitalTrigger, rate: u64, pre_trigger_percent: u8) -> R
         Combine::And if stages.len() == 2 => HwCombine::And,
         _ => HwCombine::Sequence,
     };
-    Ok(HwTrigger { stages, combine, pre_trigger_percent })
+    Ok(HwTrigger { stages, combine, pre_trigger_percent, holdoff: 0 })
 }
 
 /// Whether the device's trigger takes `t`.
@@ -262,8 +262,14 @@ pub(crate) fn plan(
     pre_trigger_percent: u8,
     rate: u64,
 ) -> Result<Evaluator, TriggerError> {
-    let hw = lower(t, rate, pre_trigger_percent)?;
+    let mut hw = lower(t, rate, pre_trigger_percent)?;
     let spec = scan_spec(&hw);
+    // The time before the trigger is there when the trigger is armed
+    // after it: a trigger fires on its first match, which on a running
+    // signal is in the first samples.
+    if caps.is_some_and(|c| c.holdoff) {
+        hw.holdoff = pre_trigger_samples(t, rate);
+    }
     let device = match caps {
         Some(c) => check(c, &hw),
         None => Err(TriggerError::NeedsDevice),
@@ -273,6 +279,12 @@ pub(crate) fn plan(
         (Err(_), Some(spec)) => Ok(Evaluator::App(spec)),
         (Err(e), None) => Err(e),
     }
+}
+
+/// The samples of the time to keep before the trigger: what passes
+/// before the trigger is looked for.
+pub(crate) fn pre_trigger_samples(t: &DigitalTrigger, rate: u64) -> u64 {
+    (t.pre_trigger_seconds.max(0.0) * rate as f64).ceil() as u64
 }
 
 /// The conditions a click on a row's trigger icon steps through: those
@@ -330,6 +342,7 @@ mod tests {
             range: true,
             or: true,
             and: true,
+            holdoff: false,
         }
     }
 
@@ -518,6 +531,7 @@ mod tests {
                 or: bit(5),
                 and: bit(6),
                 max_stages: usize::from(bit(7)),
+                holdoff: false,
             };
             let f = TriggerFeatures {
                 count: c.count,
@@ -528,6 +542,7 @@ mod tests {
                 or: c.or,
                 and: c.and,
                 max_stages: c.max_stages,
+                holdoff: c.holdoff,
             };
             for t in &triggers {
                 let Ok(hw) = lower(t, rate, 0) else { continue };

@@ -1438,6 +1438,10 @@ const ENTRIES: &[(&str, &str, &str)] = &[
      "Puede que esta captura no quepa en el búfer de memoria: sus canales analógicos ocupan unos {} y el búfer es de {}. Baja la frecuencia de muestreo, graba menos canales analógicos o amplía el búfer.",
      "此次采集可能超出内存缓冲区：模拟通道约需 {}，缓冲区为 {}。请降低采样率、减少模拟通道或增大缓冲区。"),
 
+    ("The trigger is looked for after this much data, so that it is there before the trigger. The capture keeps everything since Start that fits the memory buffer.",
+     "El disparo se busca después de esta cantidad de datos, para que estén antes del disparo. La captura conserva todo lo grabado desde el inicio que quepa en el búfer de memoria.",
+     "触发在这段数据之后才开始查找，以保证触发前有这段数据。采集会保留自开始以来缓冲区能容纳的全部数据。"),
+
     // ---- Paired shortcut rows ----
     ("Previous / Next Edge (hovered row)", "Borde anterior / siguiente (fila señalada)", "上一个/下一个边沿（悬停行）"),
     ("Previous / Next Result (hovered row)", "Resultado anterior / siguiente (fila señalada)", "上一个/下一个结果（悬停行）"),

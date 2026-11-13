@@ -36,6 +36,7 @@ pub(crate) fn to_oxrok(t: &HwTrigger, pos: impl Fn(ChannelId) -> Option<usize>) 
             trig.set_range(n, TriggerRange { channels, low: r.low, high: r.high, inside: r.inside });
         }
     }
+    trig.holdoff = t.holdoff;
     trig.combine = match t.combine {
         HwCombine::Sequence => TriggerCombine::Sequence,
         HwCombine::Or => TriggerCombine::Or,

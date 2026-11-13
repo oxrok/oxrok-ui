@@ -295,6 +295,7 @@ pub(crate) fn trigger_caps(dev: &dyn Device, capture_ratio: bool) -> Option<HwTr
         range: f.range,
         or: f.or,
         and: f.and,
+        holdoff: f.holdoff,
     })
 }
 

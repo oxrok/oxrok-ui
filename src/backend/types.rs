@@ -258,6 +258,8 @@ pub struct HwTriggerCaps {
     pub or: bool,
     /// Two stages can combine with and.
     pub and: bool,
+    /// The trigger can be armed only after a number of samples.
+    pub holdoff: bool,
 }
 
 impl HwTriggerCaps {
@@ -389,6 +391,9 @@ pub struct HwTrigger {
     pub combine: HwCombine,
     /// Share of the capture before the trigger, 0–100 % (`SR_CONF_CAPTURE_RATIO`).
     pub pre_trigger_percent: u8,
+    /// Samples the device takes before it arms the trigger, so that the
+    /// share before the trigger is there. Needs [`HwTriggerCaps::holdoff`].
+    pub holdoff: u64,
 }
 
 impl HwTrigger {
@@ -398,6 +403,7 @@ impl HwTrigger {
             stages: vec![HwStage { matches, ..HwStage::default() }],
             combine: HwCombine::Sequence,
             pre_trigger_percent,
+            holdoff: 0,
         }
     }
 

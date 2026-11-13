@@ -785,6 +785,12 @@ impl LaApp {
         // Where the scanner cannot look for the trigger, the position
         // is the device's.
         s.scanner = evaluator.as_ref().and_then(|e| e.scan()).cloned().map(crate::engine::trigger::TriggerScanner::new);
+        // Where the app looks for the trigger itself, it looks after the
+        // time to keep before it: the first match on a running signal
+        // is in the first samples, with nothing before them.
+        if let (Some(scanner), Some(trigger::Evaluator::App(_))) = (s.scanner.as_mut(), evaluator.as_ref()) {
+            scanner.skip_to(trigger::pre_trigger_samples(&trig, rate));
+        }
         s.capture = Some(data.clone());
         if next_round {
             // The decoders follow this round once it is shown.
@@ -1278,10 +1284,20 @@ impl LaApp {
                         scanner.skip_to(h.saturating_sub(WINDOW));
                     }
                     let stop = end.min(h + WINDOW);
-                    match scanner.scan(|c| d.channel(c), stop) {
-                        Some(t) => Some(t),
-                        None if stop >= h + WINDOW || d.end.is_some() => Some(h.min(end.saturating_sub(1))),
-                        None => None,
+                    if stop >= h + WINDOW || d.end.is_some() {
+                        // The data before the trigger may match too: of
+                        // the matches around, the one nearest the
+                        // device's position.
+                        let mut nearest: Option<u64> = None;
+                        while let Some(t) = scanner.scan(|c| d.channel(c), stop) {
+                            if nearest.is_none_or(|n| t.abs_diff(h) < n.abs_diff(h)) {
+                                nearest = Some(t);
+                            }
+                        }
+                        Some(nearest.unwrap_or(h.min(end.saturating_sub(1))))
+                    } else {
+                        // Not all of the window yet.
+                        None
                     }
                 }
                 // Stages, counts and the like: only the device knows

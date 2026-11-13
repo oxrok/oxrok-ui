@@ -20,7 +20,8 @@ fn title(ui: &mut Ui, text: &str) {
 /// What a Trigger capture keeps from before the trigger.
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
 pub(crate) enum PreTrigger {
-    /// Everything: the device streams and the app finds the trigger.
+    /// Everything since Start: the device streams and the app finds the
+    /// trigger, which it looks for after the pre-trigger time.
     Everything,
     /// The pre-trigger time, in the memory of a buffered device.
     DeviceMemory,
@@ -87,7 +88,9 @@ pub(crate) fn trigger_editor(
     // A device that waits for the trigger keeps only this much before
     // it; one the app scans keeps it all.
     let help = match pre_trigger {
-        PreTrigger::Everything => None,
+        PreTrigger::Everything => Some(tr(
+            "The trigger is looked for after this much data, so that it is there before the trigger. The capture keeps everything since Start that fits the memory buffer.",
+        )),
         PreTrigger::DeviceMemory => Some(tr(
             "This device records into its own memory, so it keeps only this much data before the trigger. Long durations use more device memory; with RLE the result can be longer.",
         )),

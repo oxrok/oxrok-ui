@@ -237,3 +237,25 @@ fn no_progress_card_on_buffered_devices() {
     let status = r.h.query_by_label_contains("Waiting").is_some() || r.h.query_by_label_contains("Triggered").is_some();
     assert!(status, "the toolbar status");
 }
+
+/// A capture its analog channels may not fit the buffer for says so at
+/// Start; one that fits does not.
+#[test]
+fn warns_when_the_buffer_is_small() {
+    let mut r = Rig::new(MockOptions::default());
+    pick_mode(&mut r.h, "Trigger");
+    let warned = |r: &Rig| r.h.state().toasts().iter().any(|t| t.body.contains("may not fit the memory buffer"));
+    // Two analog channels at 8 MS/s for 1.1 s: about 176 MB.
+    r.h.state_mut().session_mut().unwrap().settings.buffer_mb = 256;
+    r.h.key_press(Key::Space);
+    r.until(|a| a.session().unwrap().state == CaptureState::Recording);
+    assert!(!warned(&r));
+    r.h.key_press(Key::Space);
+    r.until(|a| !a.session().unwrap().state.is_busy());
+    r.h.state_mut().session_mut().unwrap().settings.buffer_mb = 128;
+    r.h.key_press(Key::Space);
+    r.until(|a| a.session().unwrap().state == CaptureState::Recording);
+    let toasts = r.h.state().toasts();
+    let t = toasts.iter().find(|t| t.body.contains("may not fit the memory buffer")).expect("the warning");
+    assert!(t.body.contains("about 0.17 GB, the buffer is 0.12 GB"), "{}", t.body);
+}

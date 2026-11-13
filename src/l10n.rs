@@ -1434,6 +1434,10 @@ const ENTRIES: &[(&str, &str, &str)] = &[
     ("This trigger needs a device with its own trigger.", "Este disparo necesita un dispositivo con disparo propio.",
      "此触发需要自带触发功能的设备。"),
 
+    ("This capture may not fit the memory buffer: its analog channels take about {}, the buffer is {}. Lower the sample rate, record fewer analog channels, or raise the buffer.",
+     "Puede que esta captura no quepa en el búfer de memoria: sus canales analógicos ocupan unos {} y el búfer es de {}. Baja la frecuencia de muestreo, graba menos canales analógicos o amplía el búfer.",
+     "此次采集可能超出内存缓冲区：模拟通道约需 {}，缓冲区为 {}。请降低采样率、减少模拟通道或增大缓冲区。"),
+
     // ---- Paired shortcut rows ----
     ("Previous / Next Edge (hovered row)", "Borde anterior / siguiente (fila señalada)", "上一个/下一个边沿（悬停行）"),
     ("Previous / Next Result (hovered row)", "Resultado anterior / siguiente (fila señalada)", "上一个/下一个结果（悬停行）"),

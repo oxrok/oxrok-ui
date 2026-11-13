@@ -315,6 +315,15 @@ pub(crate) fn waits_in_device(
     !caps.is_some_and(|c| c.supports_continuous) || plan_trigger(t, caps, 0, rate).is_ok_and(|e| e.device().is_some())
 }
 
+/// About what `analog` channels take in memory for `seconds` at `rate`,
+/// in MB: 4 bytes a sample, the min/max pyramid's third of that twice
+/// over, and half again for the room the buffers grow by. Digital
+/// channels take what their edges take, far less.
+pub(crate) fn analog_memory_mb(analog: usize, rate: u64, seconds: f64) -> f64 {
+    const BYTES_PER_SAMPLE: f64 = (4.0 + 8.0 / 3.0) * 1.5;
+    analog as f64 * rate as f64 * seconds.max(0.0) * BYTES_PER_SAMPLE / 1e6
+}
+
 /// The sample limit and pre-trigger percentage (`SR_CONF_CAPTURE_RATIO`,
 /// whole percent) of a device that waits for the trigger, for `pre` and
 /// `post` seconds.
@@ -685,6 +694,27 @@ impl LaApp {
             self.toast(Toast::new(ToastKind::Error, e.text()).heading(crate::l10n::tr("The trigger cannot be used")));
             return;
         }
+        // A capture of a known length that the buffer may not hold: said
+        // now, not when it stops short.
+        let seconds = match s.settings.mode {
+            CaptureMode::Timed => Some(s.settings.timer_seconds),
+            CaptureMode::Triggered => {
+                Some(s.settings.trigger.pre_trigger_seconds + s.settings.trigger.post_trigger_seconds)
+            }
+            CaptureMode::Continuous => None,
+        };
+        let analog = enabled.iter().filter(|c| c.kind == crate::core::ChannelKind::Analog).count();
+        let needs = seconds.map_or(0.0, |secs| analog_memory_mb(analog, s.settings.sample_rate, secs));
+        let buffer = s.settings.buffer_mb;
+        if needs > f64::from(buffer) {
+            let text = crate::l10n::tr(
+                "This capture may not fit the memory buffer: its analog channels take about {}, the buffer is {}. Lower the sample rate, record fewer analog channels, or raise the buffer.",
+            )
+            .replacen("{}", &ui::inspector::buffer_label(needs.ceil() as u32), 1)
+            .replacen("{}", &ui::inspector::buffer_label(buffer), 1);
+            self.toast(Toast::new(ToastKind::Warning, text).id("buffer-small").lifetime(Duration::from_secs(12)));
+        }
+        let Some(s) = self.session.as_mut() else { return };
         s.reset_annotations();
         // A Repeat run starts with round 1.
         s.repeat = s.settings.repeats().then(|| session::RepeatRun { round: 1, ..Default::default() });
@@ -1937,6 +1967,14 @@ fn pins_interval(every: Duration, slow: u32) -> Duration {
 #[cfg(test)]
 mod tests {
     use super::buffered_trigger_plan;
+
+    /// Five analog channels at 20 MS/s for 2 s: about 2 GB.
+    #[test]
+    fn analog_memory_estimate() {
+        assert_eq!(super::analog_memory_mb(5, 20_000_000, 2.0).round(), 2000.0);
+        assert_eq!(super::analog_memory_mb(0, 20_000_000, 2.0), 0.0);
+        assert_eq!(super::analog_memory_mb(2, 8_000_000, 1.1).round(), 176.0);
+    }
 
     /// Both parts are at least as long as asked after rounding.
     #[test]

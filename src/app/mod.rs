@@ -14,6 +14,7 @@ pub mod profiles;
 pub mod session;
 mod sessions;
 pub mod settings;
+pub(crate) mod trigger;
 mod ui;
 pub mod worker;
 
@@ -228,8 +229,8 @@ pub(crate) struct UiState {
     pub hover_digital: Option<crate::core::ChannelId>,
     /// Inline name editor.
     pub rename: Option<ui::Rename>,
-    /// "Other channel conditions" is expanded.
-    pub trigger_conditions_open: bool,
+    /// Trigger Details is open, on this stage.
+    pub trigger_details: Option<usize>,
     /// The Device options row is expanded, and its scope.
     pub device_options_open: bool,
     pub device_options_scope: usize,
@@ -292,46 +293,14 @@ pub(crate) struct UiState {
     pub gallery: GalleryState,
 }
 
-/// The device's own trigger for `t`, when it can match it: an edge, or
-/// the edge that ends a pulse with the width in samples at `rate`, and
-/// the linked levels on that sample.
-pub(crate) fn hw_trigger_for(
+/// What evaluates `t` on a device with `caps`, or why nothing can.
+pub(crate) fn plan_trigger(
     t: &crate::core::trigger::DigitalTrigger,
     caps: Option<&crate::backend::DeviceCaps>,
     pre_trigger_percent: u8,
     rate: u64,
-) -> Option<crate::backend::HwTrigger> {
-    device_trigger(t, caps?.hw_trigger.as_ref()?, pre_trigger_percent, rate)
-}
-
-fn device_trigger(
-    t: &crate::core::trigger::DigitalTrigger,
-    hw: &crate::backend::HwTriggerCaps,
-    pre_trigger_percent: u8,
-    rate: u64,
-) -> Option<crate::backend::HwTrigger> {
-    use crate::backend::TriggerMatch;
-    use crate::core::trigger::TriggerEvent;
-    // A falling edge ends a high pulse, a rising edge a low one.
-    let edge = match t.event {
-        TriggerEvent::Rising | TriggerEvent::NegativePulse => TriggerMatch::Rising,
-        TriggerEvent::Falling | TriggerEvent::PositivePulse => TriggerMatch::Falling,
-    };
-    let pulse_samples = if t.event.is_pulse() {
-        if !hw.pulse {
-            return None;
-        }
-        Some(t.pulse_samples(rate)?)
-    } else {
-        None
-    };
-    let mut matches = vec![(t.channel?, edge)];
-    matches.extend(t.linked.iter().map(|(c, high)| (*c, if *high { TriggerMatch::One } else { TriggerMatch::Zero })));
-    matches.iter().all(|(_, m)| hw.matches.contains(m)).then_some(crate::backend::HwTrigger {
-        matches,
-        pulse_samples,
-        pre_trigger_percent,
-    })
+) -> Result<trigger::Evaluator, trigger::TriggerError> {
+    trigger::plan(t, caps.and_then(|c| c.hw_trigger.as_ref()), pre_trigger_percent, rate)
 }
 
 /// Whether a Trigger capture waits for the trigger in the device and
@@ -343,7 +312,7 @@ pub(crate) fn waits_in_device(
     caps: Option<&crate::backend::DeviceCaps>,
     rate: u64,
 ) -> bool {
-    !caps.is_some_and(|c| c.supports_continuous) || hw_trigger_for(t, caps, 0, rate).is_some()
+    !caps.is_some_and(|c| c.supports_continuous) || plan_trigger(t, caps, 0, rate).is_ok_and(|e| e.device().is_some())
 }
 
 /// The sample limit and pre-trigger percentage (`SR_CONF_CAPTURE_RATIO`,
@@ -712,8 +681,8 @@ impl LaApp {
             return;
         }
         let triggered = s.settings.mode == CaptureMode::Triggered;
-        if triggered && !s.settings.trigger.is_valid(&enabled) {
-            self.toast(Toast::new(ToastKind::Error, crate::l10n::tr("The digital trigger setup is invalid.")));
+        if triggered && let Err(e) = plan_trigger(&s.settings.trigger, s.caps.as_ref(), 0, s.settings.sample_rate) {
+            self.toast(Toast::new(ToastKind::Error, e.text()).heading(crate::l10n::tr("The trigger cannot be used")));
             return;
         }
         s.reset_annotations();
@@ -750,6 +719,7 @@ impl LaApp {
         let rate = s.settings.sample_rate;
         let trig = s.settings.trigger.clone();
         let mut hw_trigger = None;
+        let mut evaluator = None;
         let limit = match s.settings.mode {
             CaptureMode::Timed => AcquisitionLimit::Samples((s.settings.timer_seconds * rate as f64).ceil() as u64),
             // The device waits for the trigger and records one stretch
@@ -759,12 +729,16 @@ impl LaApp {
             // instant in the data.
             CaptureMode::Triggered if waits_in_device(&trig, s.caps.as_ref(), rate) => {
                 let (limit, pre) = buffered_trigger_plan(trig.pre_trigger_seconds, trig.post_trigger_seconds, rate);
-                hw_trigger = hw_trigger_for(&trig, s.caps.as_ref(), pre, rate);
+                evaluator = plan_trigger(&trig, s.caps.as_ref(), pre, rate).ok();
+                hw_trigger = evaluator.as_ref().and_then(|e| e.device().cloned());
                 AcquisitionLimit::Samples(limit)
             }
             // Otherwise a streaming device records continuously while
             // the software trigger scans.
-            CaptureMode::Triggered => AcquisitionLimit::Continuous,
+            CaptureMode::Triggered => {
+                evaluator = plan_trigger(&trig, s.caps.as_ref(), 0, rate).ok();
+                AcquisitionLimit::Continuous
+            }
             CaptureMode::Continuous => AcquisitionLimit::Continuous,
         };
         // Session reset: drop the data, keep settings, rows and zoom.
@@ -777,9 +751,9 @@ impl LaApp {
             Box::new(move || repaint_ctx.request_repaint()),
         );
         data.write().hw_trigger_expected = hw_trigger.is_some();
-        if triggered {
-            s.scanner = Some(crate::engine::trigger::TriggerScanner::new(trig.clone(), rate));
-        }
+        // Where the scanner cannot look for the trigger, the position
+        // is the device's.
+        s.scanner = evaluator.as_ref().and_then(|e| e.scan()).cloned().map(crate::engine::trigger::TriggerScanner::new);
         s.capture = Some(data.clone());
         if next_round {
             // The decoders follow this round once it is shown.
@@ -1139,6 +1113,18 @@ impl LaApp {
                     } else {
                         e
                     };
+                    // Some devices list more trigger stages than they
+                    // arm, and only say so here.
+                    let stages =
+                        s.snapshot.as_ref().and_then(|snap| snap.trigger.as_ref()).map_or(0, |t| t.active().count());
+                    let e = if stages > 1 {
+                        format!(
+                            "{e}\n{}",
+                            crate::l10n::tr("This device may take one trigger stage only: clear stage B.")
+                        )
+                    } else {
+                        e
+                    };
                     self.device_error_toast(crate::l10n::tr("Could not begin the capture."), e);
                 }
             },
@@ -1232,26 +1218,30 @@ impl LaApp {
         }
     }
 
-    /// One software-trigger step. Returns true when the capture
-    /// has run `post_trigger_seconds` past the trigger.
+    /// One trigger step: the scanner's, or the device's position where
+    /// the scanner cannot look for the trigger. Returns true when the
+    /// capture has run `post_trigger_seconds` past the trigger.
     fn scan_trigger(&mut self) -> bool {
         let Some(s) = self.session.as_mut() else { return false };
-        let (Some(mut scanner), Some(cap)) = (s.scanner.take(), s.capture.clone()) else { return false };
-        let post = s.snapshot.as_ref().and_then(|x| x.trigger.as_ref()).map_or(0.0, |t| t.post_trigger_seconds);
+        let Some(cap) = s.capture.clone() else { return false };
+        let Some(post) = s.snapshot.as_ref().and_then(|x| x.trigger.as_ref()).map(|t| t.post_trigger_seconds) else {
+            return false;
+        };
+        let mut scanner = s.scanner.take();
         let (found, progress, rate, end, known) = {
             let d = cap.read();
             let (Some(rate), Some((_, end))) = (d.sample_rate(), d.sample_range()) else {
-                s.scanner = Some(scanner);
+                s.scanner = scanner;
                 return false;
             };
             // With the device's trigger, the data before it is
             // pre-trigger data and may match too. Wait for its position,
             // then look for the exact edge just around it (the software
             // match), falling back to the device's position.
-            let found = match (d.trigger, d.hw_trigger_expected, d.hw_trigger) {
+            let found = match (d.trigger, d.hw_trigger_expected, d.hw_trigger, scanner.as_mut()) {
                 (Some(_), ..) => None,
-                (None, true, None) if d.end.is_none() => None,
-                (None, true, Some(h)) => {
+                (None, true, None, _) if d.end.is_none() => None,
+                (None, true, Some(h), Some(scanner)) => {
                     const WINDOW: u64 = 64;
                     if scanner.progress() < h.saturating_sub(WINDOW) {
                         scanner.skip_to(h.saturating_sub(WINDOW));
@@ -1263,10 +1253,15 @@ impl LaApp {
                         None => None,
                     }
                 }
+                // Stages, counts and the like: only the device knows
+                // which match was the trigger. Its sample comes with the
+                // data after it.
+                (None, true, Some(h), None) => (end > h || d.end.is_some()).then(|| h.min(end.saturating_sub(1))),
                 // No device trigger, or the capture ended without one.
-                (None, ..) => scanner.scan(|c| d.channel(c), end),
+                (None, _, _, Some(scanner)) => scanner.scan(|c| d.channel(c), end),
+                (None, _, _, None) => None,
             };
-            (found, scanner.progress(), rate, end, d.trigger)
+            (found, scanner.as_ref().map_or(end, |s| s.progress()), rate, end, d.trigger)
         };
         {
             let mut d = cap.write();
@@ -1275,7 +1270,7 @@ impl LaApp {
                 d.trigger = Some(t);
             }
         }
-        s.scanner = Some(scanner);
+        s.scanner = scanner;
         let trigger = known.or(found);
         if let Some(t) = found {
             s.trigger = Some(CaptureTime::from_sample(t, rate));
@@ -1940,58 +1935,7 @@ fn pins_interval(every: Duration, slow: u32) -> Duration {
 
 #[cfg(test)]
 mod tests {
-    use super::{buffered_trigger_plan, device_trigger};
-    use crate::backend::{HwTrigger, HwTriggerCaps, TriggerMatch};
-    use crate::core::ChannelId;
-    use crate::core::trigger::{DigitalTrigger, TriggerEvent};
-
-    /// The app's four events as the device's trigger: a pulse is the edge
-    /// that ends it with the widths in samples, a linked channel a level.
-    #[test]
-    fn device_trigger_for_each_event() {
-        use TriggerMatch::{Falling, One, Rising, Zero};
-        let (d0, d1, d2) = (ChannelId::digital(0), ChannelId::digital(1), ChannelId::digital(2));
-        let caps = |pulse| HwTriggerCaps { matches: vec![Zero, One, Rising, Falling], capture_ratio: true, pulse };
-        let trigger = |event| DigitalTrigger {
-            channel: Some(d0),
-            event,
-            pulse_min: 2e-6,
-            pulse_max: 5e-6,
-            linked: vec![(d1, true), (d2, false)],
-            ..DigitalTrigger::default()
-        };
-        let hw = |edge, pulse_samples| {
-            Some(HwTrigger { matches: vec![(d0, edge), (d1, One), (d2, Zero)], pulse_samples, pre_trigger_percent: 10 })
-        };
-        let rate = 1_000_000;
-        for pulse in [false, true] {
-            assert_eq!(device_trigger(&trigger(TriggerEvent::Rising), &caps(pulse), 10, rate), hw(Rising, None));
-            assert_eq!(device_trigger(&trigger(TriggerEvent::Falling), &caps(pulse), 10, rate), hw(Falling, None));
-        }
-        assert_eq!(
-            device_trigger(&trigger(TriggerEvent::PositivePulse), &caps(true), 10, rate),
-            hw(Falling, Some((2, 5)))
-        );
-        assert_eq!(
-            device_trigger(&trigger(TriggerEvent::NegativePulse), &caps(true), 10, rate),
-            hw(Rising, Some((2, 5)))
-        );
-        // The widths follow the rate.
-        assert_eq!(
-            device_trigger(&trigger(TriggerEvent::PositivePulse), &caps(true), 10, 4_000_000),
-            hw(Falling, Some((8, 20)))
-        );
-
-        // Left to the app's scanner: a device without pulse widths, widths
-        // no sample count fits, a match the device lacks, no channel.
-        assert_eq!(device_trigger(&trigger(TriggerEvent::PositivePulse), &caps(false), 10, rate), None);
-        let narrow = DigitalTrigger { pulse_min: 2.2e-6, pulse_max: 2.8e-6, ..trigger(TriggerEvent::PositivePulse) };
-        assert_eq!(device_trigger(&narrow, &caps(true), 10, rate), None);
-        let edges_only = HwTriggerCaps { matches: vec![Rising, Falling], capture_ratio: true, pulse: true };
-        assert_eq!(device_trigger(&trigger(TriggerEvent::Rising), &edges_only, 10, rate), None);
-        let unset = DigitalTrigger { channel: None, ..trigger(TriggerEvent::Rising) };
-        assert_eq!(device_trigger(&unset, &caps(true), 10, rate), None);
-    }
+    use super::buffered_trigger_plan;
 
     /// Both parts are at least as long as asked after rounding.
     #[test]

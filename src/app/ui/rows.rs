@@ -57,7 +57,13 @@ fn sample_to_x(view: &ViewState, cell: Rect, sample: u64, rate: u64) -> f32 {
 }
 
 impl LaApp {
-    pub(crate) fn paint_rows(&mut self, ui: &mut Ui, l: &Layout, view: &ViewState) {
+    pub(crate) fn paint_rows(
+        &mut self,
+        ui: &mut Ui,
+        l: &Layout,
+        view: &ViewState,
+        trigger: Option<&super::trigger_ui::TriggerCols>,
+    ) {
         let theme = ui.la_theme();
         // Reset each frame; `digital_hover` sets it while hovering.
         self.ui.pulse_under.set(None);
@@ -171,7 +177,8 @@ impl LaApp {
         let dragging = self.ui.drag.is_some() || self.ui.marquee.is_some() || reorder.is_some();
         let measure = self.settings.waveform.show_interactive_measurement;
         let neutral = !self.settings.waveform.color_waveforms;
-        let collapsed = super::rowctl::collapsed(l.label_w);
+        let collapsed = super::rowctl::collapsed(l.label_w - l.trig_w);
+        let mut trigger_cells = Vec::new();
         let mut name_rects = Vec::new();
         let mut label_resps = Vec::new();
         let mut start_rename = None;
@@ -331,11 +338,18 @@ impl LaApp {
                 Some(_) => 14.0,
                 None => 0.0,
             };
-            paint_row_label(&painter, trace_label, indent, live_w, &shown_ident, name, &look, &theme);
+            paint_row_label(&painter, trace_label, indent, live_w + l.trig_w, &shown_ident, name, &look, &theme);
+            // The trigger icons, on the line of the identifier.
+            if let Some(cols) = trigger.filter(|_| row.channel.kind == ChannelKind::Digital) {
+                let cy = trace_label.top() + 20.0f32.min(trace_label.height() - 5.0) - 6.0;
+                for k in 0..cols.stages {
+                    trigger_cells.push((row.channel, row.identifier(), k, cols.cell(label.right(), cy, k)));
+                }
+            }
             if let Some((text, level, stale)) = &live {
                 let ink = if *stale { look.ink.gamma_multiply(0.4) } else { look.ink };
                 let cy = trace_label.top() + 20.0f32.min(trace_label.height() - 5.0) - 6.0;
-                let x = label.right() - 8.0;
+                let x = label.right() - l.trig_w - 8.0;
                 let spot = match level {
                     Some(high) if collapsed => {
                         let t = if *high { "H" } else { "L" };
@@ -391,7 +405,7 @@ impl LaApp {
             };
             let name_rect = Rect::from_min_max(
                 pos2(label.left() + 12.0 + indent + id_w + 4.0, label.top() + 1.0),
-                pos2(label.right() - 4.0, label.bottom() - 3.0),
+                pos2(label.right() - l.trig_w - 4.0, label.bottom() - 3.0),
             );
             let on_name = !collapsed && name_rect.width() > 12.0;
             if on_name {
@@ -420,7 +434,9 @@ impl LaApp {
             // A drag that didn't start on the name reorders.
             if resp.drag_started() {
                 let origin = ui.input(|i| i.pointer.press_origin());
-                if !(on_name && origin.is_some_and(|o| name_rect.contains(o))) {
+                // Nor one that began on a trigger icon.
+                let on_icon = origin.is_some_and(|o| o.x >= label.right() - l.trig_w);
+                if !(on_name && origin.is_some_and(|o| name_rect.contains(o))) && !on_icon {
                     let o = origin.unwrap_or(label.center());
                     start_reorder = Some(super::Reorder {
                         channel: row.channel,
@@ -468,6 +484,11 @@ impl LaApp {
                 toggle_bus = Some(id);
             }
         }
+        // The trigger icons.
+        let (cycle_trigger, trigger_details) = match trigger {
+            Some(cols) => self.trigger_cells(ui, &painter, l.rows, cols, &trigger_cells),
+            None => (None, None),
+        };
         for (channel, ident, height, snapped, left, right, bottom) in handles {
             let handle =
                 Rect::from_min_max(pos2(left, bottom - RESIZE_HANDLE / 2.0), pos2(right, bottom + RESIZE_HANDLE / 2.0));
@@ -498,6 +519,12 @@ impl LaApp {
             ui.ctx().set_cursor_icon(egui::CursorIcon::Grabbing);
         }
         self.finish_reorder(ui, l);
+        if let Some((ch, stage)) = cycle_trigger {
+            self.cycle_trigger(ch, stage);
+        }
+        if trigger_details.is_some() {
+            self.ui.trigger_details = trigger_details;
+        }
         if let Some(id) = start_rename {
             self.start_rename(id);
         }

@@ -14,7 +14,8 @@ use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 const RATE: u64 = 8_000_000;
-const LABEL_W: f32 = 105.0;
+/// The label column: 105 pt of label and the 22 pt of one trigger icon.
+const LABEL_W: f32 = 105.0 + 22.0;
 const INSPECTOR_W: f32 = 300.0;
 const D0: ChannelId = ChannelId::digital(0);
 

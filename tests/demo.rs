@@ -172,11 +172,7 @@ fn pulse_trigger_in_the_device() {
     for (ch, edge, widths, linked, pulse_level) in cases {
         let sink = Collect::default();
         let plan = AcquisitionPlan {
-            trigger: Some(HwTrigger {
-                matches: vec![(d(ch), edge), (d(linked), One)],
-                pulse_samples: Some(widths),
-                pre_trigger_percent: 50,
-            }),
+            trigger: Some(HwTrigger::one_stage(vec![(d(ch), edge), (d(linked), One)], 50).pulse(widths.0, widths.1)),
             ..AcquisitionPlan::new(AcquisitionLimit::Samples(2_000))
         };
         dev.start(plan, Box::new(sink.clone())).unwrap();
@@ -204,11 +200,7 @@ fn pulse_trigger_in_the_device() {
     // No pulse of the counter is that wide: nothing arrives until Stop.
     let sink = Collect::default();
     let plan = AcquisitionPlan {
-        trigger: Some(HwTrigger {
-            matches: vec![(d(3), Falling)],
-            pulse_samples: Some((9, 15)),
-            pre_trigger_percent: 50,
-        }),
+        trigger: Some(HwTrigger::one_stage(vec![(d(3), Falling)], 50).pulse(9, 15)),
         ..AcquisitionPlan::new(AcquisitionLimit::Samples(2_000))
     };
     dev.start(plan, Box::new(sink.clone())).unwrap();

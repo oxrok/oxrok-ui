@@ -9,6 +9,7 @@ use oxrok_ui::app::{AppOptions, LaApp};
 use oxrok_ui::backend::{MockBackend, MockOptions, Streaming};
 use oxrok_ui::core::capture::{CaptureMode, CaptureState};
 use oxrok_ui::core::markers::TimeOrigin;
+use oxrok_ui::core::trigger::Match;
 use oxrok_ui::core::{CaptureTime, ChannelId, ManualClock};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
@@ -115,7 +116,7 @@ fn trigger_mode() {
     r.h.run_steps(4);
     let s = r.h.state().session().unwrap();
     assert_eq!(s.settings.mode, CaptureMode::Triggered);
-    assert_eq!(s.settings.trigger.channel, Some(D0), "the lowest enabled channel");
+    assert_eq!(s.settings.trigger.get(0, D0), Some(Match::Rising), "the lowest enabled channel");
     r.type_time("Capture duration after trigger", "100ms");
     assert!((r.h.state().session().unwrap().settings.trigger.post_trigger_seconds - 0.1).abs() < 1e-12);
     r.record_until_done();
@@ -143,16 +144,19 @@ fn invalid_trigger_badge_and_toast() {
     r.h.run_steps(3);
     {
         let s = r.h.state_mut().session_mut().unwrap();
-        s.settings.trigger.event = oxrok_ui::core::trigger::TriggerEvent::PositivePulse;
-        s.settings.trigger.pulse_min = 0.5;
-        s.settings.trigger.pulse_max = 0.1;
+        s.settings.trigger = oxrok_ui::core::trigger::DigitalTrigger::pulse(D0, true, 0.5, 0.1);
     }
     r.h.run_steps(2);
-    assert_eq!(r.h.state().capture_blocked().as_deref(), Some("The trigger setup is invalid."));
+    let why = "No whole number of samples fits the duration at this sample rate.";
+    assert_eq!(r.h.state().capture_blocked().as_deref(), Some(why));
     r.h.key_press(Key::Space);
     r.h.run_steps(3);
     assert_eq!(r.state(), CaptureState::Empty);
-    assert!(r.h.state().toasts().iter().any(|t| t.body == "The digital trigger setup is invalid."));
+    assert!(r.h.state().toasts().iter().any(|t| t.body == why));
+    // Nothing to wait for is no trigger either.
+    r.h.state_mut().session_mut().unwrap().settings.trigger = Default::default();
+    r.h.run_steps(2);
+    assert_eq!(r.h.state().capture_blocked().as_deref(), Some("Set a trigger condition on a channel first."));
 }
 
 /// Starting again keeps analyzers and names, clears the markers.

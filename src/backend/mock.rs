@@ -69,6 +69,12 @@ pub struct MockOptions {
     pub firmware_download_stalls: bool,
     /// An external unpacker is installed. A test may install one later.
     pub unpacker: Arc<AtomicBool>,
+    /// The device has a trigger of its own, with these capabilities. It
+    /// waits for the trigger and then delivers the data around it.
+    pub hw_trigger: Option<HwTriggerCaps>,
+    /// Injected error: `start` refuses a trigger with this message, as
+    /// a driver that only checks it then.
+    pub refuse_trigger: Option<String>,
 }
 
 impl Default for MockOptions {
@@ -100,6 +106,8 @@ impl Default for MockOptions {
             firmware_dir: None,
             firmware_download_stalls: false,
             unpacker: Arc::new(AtomicBool::new(true)),
+            hw_trigger: None,
+            refuse_trigger: None,
         }
     }
 }
@@ -355,7 +363,7 @@ impl MockDevice {
             }),
             threshold: options.thresholds.then(|| ThresholdChoice::Preset("3.3".into())),
             options: mock_options(&info),
-            hw_trigger: None,
+            hw_trigger: options.hw_trigger.clone(),
             analog_ranges: info.analog_channels().map(|c| (c.id, Some((-10.0, 10.0)))).collect(),
             supports_state_read: true,
         };
@@ -476,12 +484,38 @@ impl Device for MockDevice {
             };
             return Err(BackendError::Device(error));
         }
-        if plan.trigger.is_some() {
-            return Err(BackendError::Unsupported("hardware triggers on the mock device".into()));
-        }
         let rate = self.config.sample_rate;
         let n_digital = self.info.digital_channels().count();
         let unit_size = n_digital.div_ceil(8).max(1);
+        // The device's own trigger: oxrok's software one, on the bits of
+        // the logic units.
+        let armed = match &plan.trigger {
+            None => None,
+            Some(t) => {
+                let Some(caps) = &self.caps.hw_trigger else {
+                    return Err(BackendError::Unsupported("hardware triggers on the mock device".into()));
+                };
+                if let Some(why) = &self.options.refuse_trigger {
+                    return Err(BackendError::Device(why.clone()));
+                }
+                let bit = |c: ChannelId| (c.kind == crate::core::ChannelKind::Digital).then_some(c.index as usize);
+                let trigger = crate::oxrok::trigger::to_oxrok(t, bit).map_err(BackendError::Device)?;
+                let features = ::oxrok::core::TriggerFeatures {
+                    count: caps.count,
+                    consecutive: caps.consecutive,
+                    duration: caps.duration,
+                    pulse: caps.pulse,
+                    range: caps.range,
+                    or: caps.or,
+                    and: caps.and,
+                    max_stages: caps.max_stages,
+                };
+                trigger.check(&features).map_err(|e| BackendError::Device(e.to_string()))?;
+                let matcher = ::oxrok::core::SoftTrigger::new(&trigger, unit_size)
+                    .ok_or_else(|| BackendError::Device("a trigger without stages".into()))?;
+                Some((matcher, t.pre_trigger_percent))
+            }
+        };
         let of_kind = |k| self.config.enabled.iter().copied().filter(|c| c.kind == k).collect::<Vec<ChannelId>>();
         let logic_channels = of_kind(crate::core::ChannelKind::Digital);
         let analog_channels = of_kind(crate::core::ChannelKind::Analog);
@@ -522,7 +556,13 @@ impl Device for MockDevice {
             .name("mock-acquisition".into())
             .spawn(move || {
                 sink.on_header(header);
-                let reason = stream(&generator, &options, started_at, limit, &stop_flag, sink.as_mut());
+                let reason = match armed {
+                    Some((matcher, pre)) => {
+                        let wait = Wait { matcher, pre_percent: pre, limit: limit.unwrap_or(u64::MAX) };
+                        stream_triggered(&generator, &options, started_at, wait, &stop_flag, sink.as_mut())
+                    }
+                    None => stream(&generator, &options, started_at, limit, &stop_flag, sink.as_mut()),
+                };
                 sink.on_end(reason);
             })
             .map_err(|e| BackendError::Device(e.to_string()))?;
@@ -592,6 +632,88 @@ fn stream(
         for &ch in &generator.analog {
             generator.fill_analog(ch.index, s, end, &mut volts);
             sink.on_analog(ch, s, &volts);
+        }
+        s = end;
+    }
+}
+
+/// A device's own trigger, armed.
+struct Wait {
+    matcher: ::oxrok::core::SoftTrigger,
+    /// The share of `limit` to deliver from before the trigger.
+    pre_percent: u8,
+    limit: u64,
+}
+
+/// As [`stream`], on a device that waits for its trigger: nothing until
+/// it fires, then the data from before it, its position, and the rest
+/// of the limit. Sample 0 is the first one delivered.
+fn stream_triggered(
+    generator: &Generator,
+    options: &MockOptions,
+    start: Duration,
+    mut wait: Wait,
+    stop: &AtomicBool,
+    sink: &mut dyn SampleSink,
+) -> EndReason {
+    let chunk = options.chunk_samples.max(1) as u64;
+    let mut buf = Vec::new();
+    let mut volts = Vec::new();
+    // The pattern's samples there are by now.
+    let available = || match &options.streaming {
+        Streaming::Instant => u64::MAX,
+        Streaming::RealTime(clock) => {
+            let elapsed = clock.now().saturating_sub(start);
+            (elapsed.as_nanos() * generator.rate as u128 / 1_000_000_000) as u64
+        }
+    };
+    let mut s = 0u64;
+    let fired = loop {
+        if stop.load(Ordering::SeqCst) {
+            return EndReason::Stopped;
+        }
+        if options.disconnect_after_samples.is_some_and(|d| s >= d) {
+            return EndReason::Disconnected;
+        }
+        let end = available().min(s.saturating_add(chunk));
+        if end <= s || generator.channels.is_empty() {
+            std::thread::sleep(Duration::from_millis(2));
+            continue;
+        }
+        generator.fill(s, end, &mut buf);
+        if let Some(i) = wait.matcher.feed(&buf) {
+            break s + i as u64;
+        }
+        s = end;
+    };
+    let pre = ((u128::from(wait.limit) * u128::from(wait.pre_percent) / 100) as u64).min(fired);
+    let first = fired - pre;
+    let last = first.saturating_add(wait.limit);
+    let mut s = first;
+    let mut reported = false;
+    loop {
+        if !reported && s >= fired {
+            sink.on_hw_trigger(fired - first);
+            reported = true;
+        }
+        if stop.load(Ordering::SeqCst) {
+            return EndReason::Stopped;
+        }
+        if s >= last {
+            return EndReason::Completed;
+        }
+        // The data before the trigger is in the device already.
+        let stop_at = if reported { last } else { fired };
+        let end = available().max(fired).min(s.saturating_add(chunk)).min(stop_at);
+        if end <= s {
+            std::thread::sleep(Duration::from_millis(2));
+            continue;
+        }
+        generator.fill(s, end, &mut buf);
+        sink.on_logic(s - first, generator.unit_size, &buf);
+        for &ch in &generator.analog {
+            generator.fill_analog(ch.index, s, end, &mut volts);
+            sink.on_analog(ch, s - first, &volts);
         }
         s = end;
     }

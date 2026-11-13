@@ -31,6 +31,7 @@ mod sessions;
 pub(crate) mod settings;
 mod shortcuts;
 mod start;
+pub(crate) mod trigger_ui;
 pub(crate) mod trim;
 
 use crate::ui::Token;

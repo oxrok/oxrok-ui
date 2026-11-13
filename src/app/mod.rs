@@ -1595,12 +1595,15 @@ impl LaApp {
     /// devices load theirs only then, after the scan.
     fn device_error_toast(&mut self, heading: &str, error: String) {
         self.firmware = self.backend.firmware_status();
-        let missing = self.firmware.missing.iter().find(|m| error.contains(&m.file)).map(|m| m.file.clone());
+        let missing = self.firmware.missing.iter().find(|m| firmware::names_file(&error, &m.file));
+        // An error that names none leaves an earlier firmware toast, and
+        // its file, as they are.
+        let missing = missing.map(|m| m.file.clone());
         let mut toast = Toast::new(ToastKind::Error, error).heading(heading);
-        if missing.is_some() {
+        if let Some(file) = missing {
             toast = toast.id("firmware-missing").action("Install…");
+            self.ui.firmware_toast = Some(file);
         }
-        self.ui.firmware_toast = missing;
         self.toast(toast);
     }
 

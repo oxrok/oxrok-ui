@@ -61,6 +61,17 @@ pub unsafe fn apply_bundle_env() {
     }
 }
 
+/// Whether `text` names `file` itself, not a longer name that contains
+/// it (`bc.bin` in `abc.bin`).
+pub fn names_file(text: &str, file: &str) -> bool {
+    let in_name = |c: char| c.is_alphanumeric() || matches!(c, '-' | '_');
+    !file.is_empty()
+        && text.match_indices(file).any(|(at, _)| {
+            let (before, after) = (&text[..at], &text[at + file.len()..]);
+            !before.ends_with(|c| in_name(c) || c == '.') && !after.starts_with(in_name)
+        })
+}
+
 /// A download size: "27.8 MB", "334 kB".
 pub fn human_size(bytes: u64) -> String {
     if bytes >= 1 << 20 {
@@ -170,6 +181,17 @@ impl fetch::Progress for Job {
 mod tests {
     use super::*;
     use fetch::Progress;
+
+    #[test]
+    fn whole_file_names() {
+        let error = "firmware file not found: abc.bin (install it)";
+        assert!(names_file(error, "abc.bin"));
+        assert!(!names_file(error, "bc.bin"), "part of a longer name");
+        assert!(!names_file(error, "abc.bi"));
+        assert!(!names_file(error, ""));
+        assert!(names_file("firmware not found: dir/a-b.fw.", "a-b.fw"), "after a path, before a full stop");
+        assert!(!names_file("x.a-b.fw", "a-b.fw"));
+    }
 
     #[test]
     fn sizes() {

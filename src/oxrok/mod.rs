@@ -584,3 +584,19 @@ fn feed(
     };
     sink.on_end(reason);
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// A firmware error outside a scan (a capture start) is a missing
+    /// file too, in the words of the log.
+    #[test]
+    fn firmware_errors_are_recorded() {
+        let e = device_error(oxrok::core::Error::Firmware("oxrok-test-start.rbf (install it)".into()));
+        assert!(
+            matches!(&e, BackendError::Device(m) if m == "firmware file not found: oxrok-test-start.rbf (install it)")
+        );
+        assert!(log::missing().iter().any(|m| m.file == "oxrok-test-start.rbf" && m.driver.is_empty()));
+    }
+}

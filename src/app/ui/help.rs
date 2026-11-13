@@ -521,7 +521,9 @@ impl LaApp {
                     heading(ui, tr("Download"));
                     let (size, hosts) = (human_size(pkg.download_size()), pkg.hosts().join(", "));
                     dim(ui, &tr("{} from {}").replacen("{}", &size, 1).replacen("{}", &hosts, 1));
-                    if pkg.needs_unpacker() && !d.unpacker {
+                    // Without one the download would only fail at the end.
+                    let can_unpack = d.unpacker || !pkg.needs_unpacker();
+                    if !can_unpack {
                         caution(ui, no_unpacker);
                     }
                     ui.horizontal(|ui| {
@@ -534,7 +536,7 @@ impl LaApp {
                                 cancel = true;
                             }
                         } else if ui
-                            .add_enabled(running.is_none(), Button::primary(tr("Download and install")))
+                            .add_enabled(running.is_none() && can_unpack, Button::primary(tr("Download and install")))
                             .clicked()
                         {
                             start = Some(JobKind::Download);

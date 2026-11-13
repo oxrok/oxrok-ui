@@ -177,14 +177,19 @@ impl egui::DroppedFile for Dropped {
 
 /// A folder of its own for a test, `target/kittest/<name>`, removed at
 /// the end. Its path is relative, so it reads the same in the snapshots
-/// on every machine.
-struct Scratch(std::path::PathBuf);
+/// on every machine. A lock file keeps a second run of the same test in
+/// this checkout out of it meanwhile.
+struct Scratch(std::path::PathBuf, #[allow(dead_code)] std::fs::File);
 
 impl Scratch {
     fn new(name: &str) -> Self {
-        let dir = std::path::Path::new("target/kittest").join(name);
+        let root = std::path::Path::new("target/kittest");
+        std::fs::create_dir_all(root).unwrap();
+        let lock = std::fs::File::create(root.join(format!("{name}.lock"))).unwrap();
+        lock.lock().unwrap();
+        let dir = root.join(name);
         let _ = std::fs::remove_dir_all(&dir);
-        Self(dir)
+        Self(dir, lock)
     }
 
     fn path(&self) -> &std::path::Path {
@@ -344,6 +349,43 @@ fn start_failure_offers_the_firmware() {
     r.h.get_by_label("Install firmware");
     r.h.get_by_label("Download and install");
     assert!(r.h.query_by_label("Could not begin the capture.").is_none(), "the toast is gone");
+}
+
+/// Another error doesn't take the file from a firmware toast still up:
+/// its Install… opens the dialog.
+#[test]
+fn a_later_error_keeps_the_install_action() {
+    let file = "kingst-la2016a1-fpga.bitstream";
+    let dir = tempfile::tempdir().unwrap();
+    let fw = dir.path().join("oxrok-firmware");
+    let mut r = rig_with(MockOptions {
+        missing_firmware: Some(("kingst-la2016".into(), file.into())),
+        firmware_dir: Some(fw.clone()),
+        fail_start: true,
+        ..MockOptions::default()
+    });
+    r.h.get_by_label("Mock 16 digital + 4 analog").click();
+    let t0 = std::time::Instant::now();
+    while !r.h.state().session().is_some_and(|s| s.caps.is_some()) {
+        assert!(t0.elapsed() < Duration::from_secs(10), "the device didn't open");
+        r.h.step();
+    }
+    r.h.key_press(Key::Space);
+    wait_for(&mut r, "Install…");
+    // The file is there now, so the next failure is a plain error.
+    std::fs::create_dir_all(&fw).unwrap();
+    std::fs::write(fw.join(file), b"fw").unwrap();
+    r.h.key_press(Key::Space);
+    let t0 = std::time::Instant::now();
+    while r.h.query_all_by_label("Could not begin the capture.").count() < 2 {
+        assert!(t0.elapsed() < Duration::from_secs(10), "no second error");
+        r.h.step();
+    }
+    // The toasts moved up, and are clicked where they were a frame ago.
+    r.h.run_steps(4);
+    r.h.get_by_label("Install…").click();
+    r.h.run();
+    r.h.get_by_label("Install firmware");
 }
 
 /// A file no package provides: the dialog lists the firmware folders.

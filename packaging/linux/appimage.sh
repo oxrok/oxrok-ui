@@ -35,7 +35,6 @@ for d in /usr/share/sigrok-firmware /usr/local/share/sigrok-firmware; do
     [ -d "$d" ] && cp -r "$d/." "$SHARE/sigrok-firmware/"
 done
 [ -d vendor/sigrok-firmware ] && cp -r vendor/sigrok-firmware/. "$SHARE/sigrok-firmware/"
-[ -d vendor/sigrok-util ] && cp -r vendor/sigrok-util "$SHARE/sigrok-util" && rm -rf "$SHARE/sigrok-util/.git"
 
 # USB permission rules, for the user to install.
 mkdir -p "$SHARE/udev"

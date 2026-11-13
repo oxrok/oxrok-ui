@@ -1100,9 +1100,9 @@ impl LaApp {
             )
         });
         if !dropped.is_empty() {
-            // A file dropped on Install Firmware is its input.
-            if let Some(d) = self.ui.install_firmware.as_mut() {
-                d.input = dropped.into_iter().next();
+            // Files dropped on Install Firmware are what it installs from.
+            if self.ui.install_firmware.is_some() {
+                self.on_firmware_input(dropped);
                 return;
             }
             self.open_paths(dropped);

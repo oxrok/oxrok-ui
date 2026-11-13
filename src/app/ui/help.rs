@@ -1,7 +1,8 @@
 //! Device Connection Help and About.
 
+use crate::app::firmware::{Job, JobKind, human_size, unpacker_hint};
 use crate::app::{APP_NAME, AppEvent, LaApp};
-use crate::backend::DeviceInfo;
+use crate::backend::{DeviceInfo, MissingFirmware, fetch};
 use crate::l10n::tr;
 use crate::ui::ThemeExt;
 use crate::ui::icons;
@@ -10,6 +11,8 @@ use crate::ui::toast::{Toast, ToastKind};
 use crate::ui::typography::Text;
 use crate::ui::widgets::{Button, Segment, segmented};
 use egui::{Align, Context, Frame, Id, Layout, Margin, Modal, ScrollArea, Sense, Ui, pos2, vec2};
+use std::path::PathBuf;
+use std::sync::Arc;
 
 /// The recent "driver:conn" entries kept.
 pub(crate) const RECENT_CONNS: usize = 5;
@@ -26,15 +29,21 @@ pub(crate) struct ConnectionHelp {
 /// Install Firmware dialog state.
 #[derive(Clone, Debug)]
 pub(crate) struct InstallFirmware {
-    pub family: crate::app::firmware::Family,
     /// The missing file that brought it up.
     pub file: String,
-    pub input: Option<std::path::PathBuf>,
-    pub log: Vec<String>,
-    pub running: bool,
-    pub result: Option<Result<Vec<std::path::PathBuf>, String>>,
-    /// *Show manual steps*.
-    pub manual: bool,
+    /// Where the file comes from, when the firmware registry knows.
+    pub package: Option<&'static fetch::Package>,
+    /// The files and folders to install from.
+    pub inputs: Vec<PathBuf>,
+    /// One of `inputs` is an archive only an external unpacker opens.
+    pub inputs_packed: bool,
+    /// unar, 7-Zip or bsdtar is installed. Looked for when something
+    /// needs one, and again while none is there.
+    pub unpacker: bool,
+    /// When it was last looked for, in egui's time.
+    pub unpacker_checked: f64,
+    /// The download or import, running or finished.
+    pub job: Option<Arc<Job>>,
 }
 
 /// Dialog state.
@@ -159,11 +168,7 @@ impl LaApp {
     fn firmware_card(&self) -> Card {
         match self.firmware.missing.first() {
             None => Card { check: Check::Ok, title: tr("Firmware"), text: tr("No firmware missing").into() },
-            Some(m) => Card {
-                check: Check::Warn,
-                title: tr("Firmware"),
-                text: tr("{} is missing (needed by {})").replacen("{}", &m.file, 1).replacen("{}", &m.driver, 1),
-            },
+            Some(m) => Card { check: Check::Warn, title: tr("Firmware"), text: missing_text(m) },
         }
     }
 
@@ -226,12 +231,7 @@ impl LaApp {
             // Firmware: each missing file, then the search paths.
             card(ui, &fw_card, |ui| {
                 for m in missing.iter().skip(1) {
-                    ui.label(
-                        egui::RichText::new(
-                            tr("{} is missing (needed by {})").replacen("{}", &m.file, 1).replacen("{}", &m.driver, 1),
-                        )
-                        .color(theme.color(Token::Ink3)),
-                    );
+                    ui.label(egui::RichText::new(missing_text(m)).color(theme.color(Token::Ink3)));
                 }
                 if let Some(m) = missing.first()
                     && ui.add(Button::secondary(tr("Install…"))).clicked()
@@ -446,247 +446,292 @@ impl LaApp {
 
 // ---- Install Firmware ----
 
+/// "X is missing (needed by D)", or without the driver when it isn't known.
+fn missing_text(m: &MissingFirmware) -> String {
+    if m.driver.is_empty() {
+        tr("{} is missing.").replacen("{}", &m.file, 1)
+    } else {
+        tr("{} is missing (needed by {})").replacen("{}", &m.file, 1).replacen("{}", &m.driver, 1)
+    }
+}
+
 impl LaApp {
     pub(crate) fn open_install_firmware(&mut self, file: &str) {
-        let family = crate::app::firmware::family_of(file);
+        self.close_install_firmware();
         self.ui.install_firmware = Some(InstallFirmware {
-            family,
             file: file.to_owned(),
-            input: None,
-            log: Vec::new(),
-            running: false,
-            result: None,
-            manual: crate::app::firmware::script_path(&family).is_none() && !self.backend_extracts(),
+            package: fetch::package_for(file),
+            inputs: Vec::new(),
+            inputs_packed: false,
+            unpacker: false,
+            unpacker_checked: f64::NEG_INFINITY,
+            job: None,
         });
     }
 
-    /// The backend can extract without a bundled script (the mock).
-    fn backend_extracts(&self) -> bool {
-        self.backend.extracts_without_script()
-    }
-
-    fn firmware_out_dir(&self) -> std::path::PathBuf {
-        crate::app::firmware::user_firmware_dir(&self.firmware.paths)
-    }
-
-    pub(crate) fn on_firmware_input(&mut self, p: Option<std::path::PathBuf>) {
-        if let (Some(d), Some(p)) = (self.ui.install_firmware.as_mut(), p) {
-            d.input = Some(p);
+    /// Closes the dialog; a download or import still running is cancelled,
+    /// and installs nothing.
+    fn close_install_firmware(&mut self) {
+        if let Some(job) = self.ui.install_firmware.take().and_then(|d| d.job) {
+            job.cancel();
         }
     }
 
-    pub(crate) fn on_firmware_line(&mut self, line: String) {
-        if let Some(d) = self.ui.install_firmware.as_mut() {
-            d.log.push(line);
+    /// Files or folders to install from: dropped on the dialog, or picked.
+    pub(crate) fn on_firmware_input(&mut self, paths: Vec<PathBuf>) {
+        let Some(d) = self.ui.install_firmware.as_mut() else { return };
+        for p in paths {
+            if !d.inputs.contains(&p) {
+                d.inputs.push(p);
+            }
         }
-    }
-
-    pub(crate) fn on_firmware_done(&mut self, r: Result<Vec<std::path::PathBuf>, String>) {
-        if let Some(d) = self.ui.install_firmware.as_mut() {
-            d.running = false;
-            d.result = Some(r);
-        }
-    }
-
-    /// The equivalent terminal commands (*Show manual steps*).
-    fn manual_steps(&self, d: &InstallFirmware) -> String {
-        let out = self.firmware_out_dir();
-        match d.family.script {
-            Some(script) => format!(
-                "git clone https://github.com/sigrokproject/sigrok-util\nmkdir -p \"{dir}\"\ncd \"{dir}\"\n{interp} /path/to/sigrok-util/firmware/{script} \"{input}\"",
-                dir = out.display(),
-                interp = if d.family.needs.contains(&"python3") { "python3" } else { "sh" },
-                input = d.input.as_ref().map_or("/path/to/the/vendor/file".into(), |p| p.display().to_string()),
-            ),
-            None => format!(
-                "See {} for where to get {} and put the files in\n{}",
-                d.family.wiki,
-                d.family.input.to_lowercase(),
-                out.display()
-            ),
-        }
+        d.inputs_packed = d.inputs.iter().any(|p| fetch::file_needs_unpacker(p));
     }
 
     pub(crate) fn install_firmware_dialog(&mut self, ctx: &Context) {
+        /// A button's height: text beside one is centred on it.
+        const ROW_H: f32 = 36.0;
+        const UNPACKER_RECHECK: std::time::Duration = std::time::Duration::from_secs(1);
         let Some(mut d) = self.ui.install_firmware.take() else { return };
         let theme = ctx.la_theme();
-        let out_dir = self.firmware_out_dir();
-        let script = crate::app::firmware::script_path(&d.family);
-        let can_extract = script.is_some() || self.backend_extracts();
-        let missing_tools = crate::app::firmware::missing_tools(d.family.needs);
-        let manual_text = self.manual_steps(&d);
-        let (mut close, mut browse, mut extract, mut rescan) = (false, false, false, false);
+        let install_dir = self.firmware.install_dir.clone();
+        let running = d.job.as_ref().filter(|j| !j.finished()).map(|j| j.kind);
+        // While an archive needs an unpacker and none is there, look
+        // again: the user may be installing one.
+        if !d.unpacker && (d.inputs_packed || d.package.is_some_and(fetch::Package::needs_unpacker)) {
+            let now = ctx.input(|i| i.time);
+            if now - d.unpacker_checked >= UNPACKER_RECHECK.as_secs_f64() {
+                d.unpacker = self.backend.firmware_unpacker();
+                d.unpacker_checked = now;
+            }
+            ctx.request_repaint_after(UNPACKER_RECHECK);
+        }
+        let (mut close, mut cancel, mut rescan) = (false, false, false);
+        // Browse for a folder (true) or files; the job to start.
+        let (mut browse, mut start) = (None, None);
         let resp = Modal::new(Id::unique("install_firmware")).frame(super::dialogs::modal_frame(ctx)).show(ctx, |ui| {
             ui.set_width(560.0);
-            title_row(ui, &tr("Install firmware for {}").replacen("{}", d.family.title, 1), &mut close);
+            title_row(ui, tr("Install firmware"), &mut close);
             ui.label(
                 egui::RichText::new(tr("{} is missing.").replacen("{}", &d.file, 1)).color(theme.color(Token::Ink4)),
             );
             ui.add_space(14.0);
-            let step = |ui: &mut Ui, n: &str, title: &str| {
-                ui.horizontal(|ui| {
-                    ui.label(egui::RichText::new(n).text_style(Text::Lead.style()).color(theme.color(Token::Mark)));
-                    ui.label(egui::RichText::new(title).text_style(Text::Lead.style()));
-                });
+            let heading = |ui: &mut Ui, text: &str| {
+                ui.label(egui::RichText::new(text).text_style(Text::Lead.style()));
             };
-            step(ui, "1", tr("Download the vendor software"));
-            ui.horizontal(|ui| {
-                ui.add_space(18.0);
-                ui.label(egui::RichText::new(d.family.input).color(theme.color(Token::Ink3)));
-                ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-                    ui.hyperlink_to(tr("Device page ↗"), d.family.wiki);
-                });
-            });
-            ui.add_space(10.0);
-            if d.manual || !can_extract {
-                ui.label(egui::RichText::new(tr("Manual steps")).text_style(Text::Lead.style()));
-                if !can_extract {
-                    ui.label(
-                        egui::RichText::new(if d.family.script.is_some() {
-                            tr("The extraction scripts aren't bundled with this build (make firmware-deps).")
-                        } else {
-                            tr("There is no extraction step for this device.")
-                        })
-                        .color(theme.color(Token::Ink4)),
-                    );
+            let dim = |ui: &mut Ui, text: &str| {
+                ui.label(egui::RichText::new(text).color(theme.color(Token::Ink3)));
+            };
+            let caution = |ui: &mut Ui, text: &str| {
+                ui.label(egui::RichText::new(format!("! {text}")).color(theme.color(Token::Caution)));
+            };
+            let no_unpacker = tr("Unpacking this needs unar, 7-Zip or bsdtar, and none is installed.");
+            let how_to_get_one = tr(unpacker_hint(std::env::consts::OS));
+            if let (Some(pkg), Some(dir)) = (d.package, &install_dir) {
+                heading(ui, pkg.title);
+                if let Some(note) = pkg.note {
+                    dim(ui, note);
                 }
-                Frame::new()
-                    .stroke(egui::Stroke::new(1.0, theme.color(Token::Seam)))
-                    .inner_margin(Margin::same(8))
-                    .show(ui, |ui| {
-                        ui.set_width(ui.available_width());
-                        ui.label(egui::RichText::new(&manual_text).monospace().size(11.0));
-                    });
-                if ui.link(tr("Copy")).clicked() {
-                    ui.ctx().copy_text(manual_text.clone());
-                }
-            } else {
-                step(ui, "2", tr("Choose the downloaded file"));
-                ui.horizontal(|ui| {
-                    ui.add_space(18.0);
-                    let mut shown = d.input.as_ref().map_or(String::new(), |p| p.display().to_string());
-                    ui.add_enabled(
-                        false,
-                        egui::TextEdit::singleline(&mut shown).hint_text(tr("Drop the file here")).desired_width(380.0),
-                    );
-                    if ui.add(Button::secondary(tr("Browse…"))).clicked() {
-                        browse = true;
-                    }
-                });
                 ui.add_space(10.0);
-                step(ui, "3", tr("Extract"));
-                ui.horizontal(|ui| {
-                    ui.add_space(18.0);
-                    let ok = d.input.is_some() && !d.running && missing_tools.is_empty();
-                    if ui.add_enabled(ok, Button::primary(tr("Extract firmware"))).clicked() {
-                        extract = true;
+                if pkg.downloadable() {
+                    heading(ui, tr("Download"));
+                    let (size, hosts) = (human_size(pkg.download_size()), pkg.hosts().join(", "));
+                    dim(ui, &tr("{} from {}").replacen("{}", &size, 1).replacen("{}", &hosts, 1));
+                    // Without one the download would only fail at the end.
+                    let can_unpack = d.unpacker || !pkg.needs_unpacker();
+                    if !can_unpack {
+                        caution(ui, no_unpacker);
+                        dim(ui, how_to_get_one);
+                        dim(ui, tr("Or download it yourself, unpack it and use the folder below:"));
+                        for dl in pkg.downloads {
+                            if let Some(url) = dl.urls.first() {
+                                ui.hyperlink_to(format!("{} ↗", dl.name), *url);
+                            }
+                        }
+                        ui.add_space(4.0);
                     }
-                    if d.running {
-                        ui.add(egui::Spinner::new());
-                    }
-                });
-                for t in &missing_tools {
-                    let hint = crate::app::firmware::install_hint(t);
                     ui.horizontal(|ui| {
-                        ui.add_space(18.0);
-                        ui.label(
-                            egui::RichText::new(tr("! {} is needed: {}").replacen("{}", t, 1).replacen("{}", &hint, 1))
-                                .color(theme.color(Token::Caution)),
-                        );
-                        if ui.link(tr("Copy command")).clicked() {
-                            ui.ctx().copy_text(hint.clone());
+                        ui.set_min_height(ROW_H);
+                        if running == Some(JobKind::Download) {
+                            let (done, total) = d.job.as_ref().and_then(|j| j.downloaded()).unwrap_or((0, 1));
+                            let text = format!("{} / {}", human_size(done), human_size(total));
+                            ui.add(egui::ProgressBar::new(done as f32 / total as f32).desired_width(380.0).text(text));
+                            if ui.add(Button::secondary(tr("Cancel"))).clicked() {
+                                cancel = true;
+                            }
+                        } else if ui
+                            .add_enabled(running.is_none() && can_unpack, Button::primary(tr("Download and install")))
+                            .clicked()
+                        {
+                            start = Some(JobKind::Download);
                         }
                     });
+                    ui.add_space(10.0);
+                    heading(ui, tr("Or use files you have"));
+                } else {
+                    heading(ui, tr("Use files you have"));
                 }
-                if !d.log.is_empty() {
+                match pkg.manual {
+                    Some(m) => {
+                        dim(ui, &tr("You need {}.").replacen("{}", m.what, 1));
+                        if let Some(url) = m.url {
+                            ui.hyperlink_to(format!("{url} ↗"), url);
+                        }
+                        for line in m.steps.lines().map(str::trim).filter(|l| !l.is_empty()) {
+                            ui.label(egui::RichText::new(line).size(11.0).color(theme.color(Token::Ink4)));
+                        }
+                    }
+                    None => dim(ui, tr("The firmware files, or an archive or a folder with them.")),
+                }
+                ui.add_space(4.0);
+                ui.horizontal(|ui| {
                     Frame::new()
                         .stroke(egui::Stroke::new(1.0, theme.color(Token::Seam)))
-                        .inner_margin(Margin::same(8))
+                        .corner_radius(4)
+                        .inner_margin(Margin::symmetric(8, 10))
                         .show(ui, |ui| {
-                            ScrollArea::vertical().max_height(120.0).stick_to_bottom(true).show(ui, |ui| {
-                                ui.set_width(ui.available_width());
-                                ui.label(egui::RichText::new(d.log.join("\n")).monospace().size(11.0));
-                            });
-                        });
-                }
-                match &d.result {
-                    Some(Ok(files)) => {
-                        let n = files.len();
-                        let dir = out_dir.display().to_string();
-                        let text = if n == 1 {
-                            tr("✓ Installed 1 file to {}").replacen("{}", &dir, 1)
-                        } else {
-                            tr("✓ Installed {} files to {}").replacen("{}", &n.to_string(), 1).replacen("{}", &dir, 1)
-                        };
-                        ui.label(egui::RichText::new(text).color(theme.color(Token::Good)));
-                        ui.horizontal(|ui| {
-                            ui.label(
-                                egui::RichText::new(tr("Replug the device if it isn't found."))
-                                    .color(theme.color(Token::Ink3)),
-                            );
-                            if ui.add(Button::secondary(tr("Rescan"))).clicked() {
-                                rescan = true;
+                            ui.set_width(340.0);
+                            if d.inputs.is_empty() {
+                                ui.label(
+                                    egui::RichText::new(tr("Drop files or a folder here"))
+                                        .color(theme.color(Token::Ink4)),
+                                );
+                            }
+                            for p in &d.inputs {
+                                ui.add(egui::Label::new(p.display().to_string()).truncate());
                             }
                         });
+                    if ui.add_enabled(running.is_none(), Button::secondary(tr("Files…"))).clicked() {
+                        browse = Some(false);
                     }
-                    Some(Err(e)) => {
-                        ui.label(egui::RichText::new(format!("! {e}")).color(theme.color(Token::Alert)));
-                        if ui.link(tr("Copy log")).clicked() {
-                            ui.ctx().copy_text(d.log.join("\n"));
+                    if ui.add_enabled(running.is_none(), Button::secondary(tr("Folder…"))).clicked() {
+                        browse = Some(true);
+                    }
+                });
+                if d.inputs_packed && !d.unpacker {
+                    caution(ui, no_unpacker);
+                    dim(ui, how_to_get_one);
+                    dim(ui, tr("Or unpack it yourself and use the folder."));
+                }
+                ui.add_space(4.0);
+                ui.horizontal(|ui| {
+                    let label = tr("Install from these files");
+                    // The download, when there is one, is the main way.
+                    let button = if pkg.downloadable() { Button::secondary(label) } else { Button::primary(label) };
+                    if ui.add_enabled(running.is_none() && !d.inputs.is_empty(), button).clicked() {
+                        start = Some(JobKind::Import);
+                    }
+                    if !d.inputs.is_empty() && running.is_none() && ui.link(tr("Clear")).clicked() {
+                        d.inputs.clear();
+                        d.inputs_packed = false;
+                    }
+                    if running == Some(JobKind::Import) {
+                        ui.add(egui::Spinner::new());
+                        if ui.add(Button::secondary(tr("Cancel"))).clicked() {
+                            cancel = true;
                         }
                     }
-                    None => {}
+                });
+                if let Some(job) = &d.job {
+                    let log = job.log();
+                    if !log.is_empty() {
+                        ui.add_space(6.0);
+                        Frame::new()
+                            .stroke(egui::Stroke::new(1.0, theme.color(Token::Seam)))
+                            .inner_margin(Margin::same(8))
+                            .show(ui, |ui| {
+                                ScrollArea::vertical().max_height(120.0).stick_to_bottom(true).show(ui, |ui| {
+                                    ui.set_width(ui.available_width());
+                                    ui.label(egui::RichText::new(&log).monospace().size(11.0));
+                                });
+                            });
+                    }
+                    job.with_result(|result| match result {
+                        Ok(installed) => {
+                            let n = installed.files.len();
+                            let dir = dir.display().to_string();
+                            let text = if n == 1 {
+                                tr("✓ Installed 1 file to {}").replacen("{}", &dir, 1)
+                            } else {
+                                tr("✓ Installed {} files to {}")
+                                    .replacen("{}", &n.to_string(), 1)
+                                    .replacen("{}", &dir, 1)
+                            };
+                            ui.label(egui::RichText::new(text).color(theme.color(Token::Good)));
+                            for w in &installed.warnings {
+                                caution(ui, w);
+                            }
+                            ui.horizontal(|ui| {
+                                ui.set_min_height(ROW_H);
+                                dim(ui, tr("Replug the device if it isn't found."));
+                                if ui.add(Button::secondary(tr("Rescan"))).clicked() {
+                                    rescan = true;
+                                }
+                            });
+                        }
+                        Err(fetch::Error::Cancelled) => dim(ui, tr("Cancelled. Nothing was installed.")),
+                        Err(e) => {
+                            ui.label(egui::RichText::new(format!("! {e}")).color(theme.color(Token::Alert)));
+                            if ui.link(tr("Copy log")).clicked() {
+                                ui.ctx().copy_text(format!("{log}\n{e}"));
+                            }
+                        }
+                    });
+                }
+            } else {
+                // A file the registry doesn't know: only the vendor has it.
+                dim(ui, tr("No source is known for this file. Get it from the device's vendor and put it in one of:"));
+                for (p, exists) in &self.firmware.paths {
+                    let mark = if *exists { "✓" } else { "○" };
+                    ui.label(
+                        egui::RichText::new(format!("{mark} {}", p.display()))
+                            .size(11.0)
+                            .color(theme.color(Token::Ink4)),
+                    );
                 }
             }
             ui.add_space(16.0);
-            ui.horizontal(|ui| {
-                if can_extract {
-                    let label = if d.manual { tr("Hide manual steps") } else { tr("Show manual steps") };
-                    if ui.add(Button::secondary(label)).clicked() {
-                        d.manual = !d.manual;
-                    }
+            ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
+                if ui.add(Button::primary(tr("Close"))).clicked() {
+                    close = true;
                 }
-                ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-                    if ui.add(Button::primary(tr("Close"))).clicked() {
-                        close = true;
-                    }
-                });
             });
         });
-        if browse {
+        if let Some(folder) = browse {
             let (dialogs, tx, ctx2) = (self.dialogs.clone(), self.events_tx.clone(), ctx.clone());
-            let folder = d.family.input.contains("folder");
             std::thread::spawn(move || {
-                let p = if folder {
-                    dialogs.pick_folder(None)
+                let paths = if folder {
+                    dialogs.pick_folder(None).into_iter().collect()
                 } else {
-                    dialogs.open_files(tr("Choose the downloaded file"), None, &[]).into_iter().next()
+                    dialogs.open_files(tr("Choose the files"), None, &[])
                 };
-                let _ = tx.send(AppEvent::FirmwareInput(p));
+                let _ = tx.send(AppEvent::FirmwareInput(paths));
                 ctx2.request_repaint();
             });
         }
-        if extract && let Some(input) = d.input.clone() {
-            d.running = true;
-            d.log.clear();
-            d.result = None;
-            let script = script.clone().unwrap_or_default();
-            let (backend, tx, ctx2, out) = (self.backend.clone(), self.events_tx.clone(), ctx.clone(), out_dir);
+        if let (Some(kind), Some(pkg), Some(dir)) = (start, d.package, install_dir) {
+            let total = if kind == JobKind::Download { pkg.download_size() } else { 0 };
+            let ctx2 = ctx.clone();
+            let job = Arc::new(Job::new(kind, total, move || ctx2.request_repaint()));
+            d.job = Some(job.clone());
+            let (backend, inputs) = (self.backend.clone(), d.inputs.clone());
             std::thread::spawn(move || {
-                let mut line = |l: String| {
-                    let _ = tx.send(AppEvent::FirmwareLine(l));
-                    ctx2.request_repaint();
+                let result = match kind {
+                    JobKind::Download => backend.fetch_firmware(pkg, &dir, &*job),
+                    JobKind::Import => backend.import_firmware(pkg, &inputs, &dir, &*job),
                 };
-                let r = backend.extract_firmware(&script, &input, &out, &mut line).map_err(|e| e.to_string());
-                let _ = tx.send(AppEvent::FirmwareDone(r));
-                ctx2.request_repaint();
+                job.finish(result);
             });
+        }
+        if cancel && let Some(job) = &d.job {
+            job.cancel();
         }
         if rescan {
             self.rescan_devices();
         }
-        if !close && !resp.should_close() {
-            self.ui.install_firmware = Some(d);
+        self.ui.install_firmware = Some(d);
+        if close || resp.should_close() {
+            self.close_install_firmware();
         }
     }
 }

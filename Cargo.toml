@@ -49,6 +49,9 @@ log = { version = "0.4", features = ["std"] }
 # From oxrok's main until its next release: the software triggers with value
 # ranges, or/and and pulse widths, matched a word of samples at a time.
 oxrok = { git = "https://github.com/oxrok/oxrok", rev = "7daea63f390e6d681b5b08ec903d76ea55d61d49", default-features = false, features = ["nusb", "rustpython"] }
+# The firmware registry: downloads what a device is missing over HTTPS
+# (ureq, rustls), or takes it from the vendor's software.
+oxrok-firmware-fetch = "0.2"
 serialport = { version = "4", default-features = false }
 
 # Cmd+Q must reach the app, not winit's default macOS menu.

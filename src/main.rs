@@ -31,9 +31,11 @@ fn self_test() -> i32 {
     println!("{}", oxrok_ui::oxrok::library_info());
     let devices = b.scan_devices();
     println!("{} devices: {:?}", devices.len(), devices.iter().map(|d| d.id.0.clone()).collect::<Vec<_>>());
-    for (p, exists) in b.firmware_status().paths {
+    let firmware = b.firmware_status();
+    for (p, exists) in firmware.paths {
         println!("firmware path {} {}", if exists { "✓" } else { "○" }, p.display());
     }
+    println!("firmware installs into {:?}", firmware.install_dir);
     ok &= devices.iter().any(|d| d.driver == "demo");
     match oxrok_ui::oxrok::OxrokDecoders::new(None) {
         Ok(e) => {

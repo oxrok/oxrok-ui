@@ -35,7 +35,13 @@ fn device_error(e: oxrok::core::Error) -> BackendError {
     match e {
         oxrok::core::Error::Busy => BackendError::Busy,
         oxrok::core::Error::Disconnected => BackendError::Device("device disconnected".into()),
-        oxrok::core::Error::Firmware(s) => BackendError::Device(format!("firmware file not found: {s}")),
+        oxrok::core::Error::Firmware(s) => {
+            // Some devices load theirs when a capture starts, outside
+            // the scan's log.
+            let msg = format!("firmware file not found: {s}");
+            log::note(&msg);
+            BackendError::Device(msg)
+        }
         other => BackendError::Device(other.to_string()),
     }
 }
@@ -218,6 +224,8 @@ impl Backend for OxrokBackend {
         FirmwareStatus {
             missing: log::missing(),
             paths: oxrok::core::firmware::search_dirs().into_iter().map(|p| (p.clone(), p.is_dir())).collect(),
+            // The first per-user folder of `search_dirs`.
+            install_dir: crate::backend::fetch::default_install_dir(),
         }
     }
 
@@ -580,4 +588,20 @@ fn feed(
         None => EndReason::Error("the device stopped without an end packet".into()),
     };
     sink.on_end(reason);
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// A firmware error outside a scan (a capture start) is a missing
+    /// file too, in the words of the log.
+    #[test]
+    fn firmware_errors_are_recorded() {
+        let e = device_error(oxrok::core::Error::Firmware("oxrok-test-start.rbf (install it)".into()));
+        assert!(
+            matches!(&e, BackendError::Device(m) if m == "firmware file not found: oxrok-test-start.rbf (install it)")
+        );
+        assert!(log::missing().iter().any(|m| m.file == "oxrok-test-start.rbf" && m.driver.is_empty()));
+    }
 }

@@ -501,14 +501,16 @@ pub type ProgressFn = Box<dyn FnMut(f32) + Send>;
 /// A firmware file a driver failed to load.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct MissingFirmware {
+    /// Empty when the file was asked for outside a scan or an open.
     pub driver: String,
     pub file: String,
 }
 
-/// The missing files of the last scan, and the firmware search
-/// paths with whether each exists.
+/// The missing files, the firmware search paths with whether each
+/// exists, and the folder installs go to.
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct FirmwareStatus {
     pub missing: Vec<MissingFirmware>,
     pub paths: Vec<(std::path::PathBuf, bool)>,
+    pub install_dir: Option<std::path::PathBuf>,
 }

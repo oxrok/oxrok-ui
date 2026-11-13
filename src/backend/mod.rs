@@ -10,11 +10,15 @@ mod types;
 
 #[cfg(feature = "mock")]
 pub use mock::{MockBackend, MockOptions, Streaming};
-pub mod firmware;
 pub use types::*;
 
+/// The firmware registry, and its downloads and imports
+/// (`oxrok-firmware-fetch`).
+pub use ::oxrok_firmware_fetch as fetch;
+
 use crate::core::ChannelId;
-use std::path::Path;
+use fetch::{Installed, Package, Progress};
+use std::path::{Path, PathBuf};
 
 pub trait Backend: Send + Sync + 'static {
     /// May block; call off the UI thread.
@@ -37,21 +41,35 @@ pub trait Backend: Send + Sync + 'static {
         FirmwareStatus::default()
     }
 
-    /// Extraction needs no bundled script (the mock's copy).
-    fn extracts_without_script(&self) -> bool {
-        false
+    /// Downloads `pkg`, checks it against its pinned hashes, and installs
+    /// its files into `dest`. Blocks; `progress` hears the steps and can
+    /// cancel.
+    fn fetch_firmware(
+        &self,
+        pkg: &'static Package,
+        dest: &Path,
+        progress: &dyn Progress,
+    ) -> Result<Installed, fetch::Error> {
+        fetch::fetch(pkg, dest, &fetch::Options { progress, ..fetch::Options::default() })
     }
 
-    /// Runs a sigrok-util extraction script on `input`, writing
-    /// into `out_dir`; returns the files written. Blocks.
-    fn extract_firmware(
+    /// Whether an external unpacker (unar, 7-Zip or bsdtar) is installed,
+    /// for the archives that need one.
+    fn firmware_unpacker(&self) -> bool {
+        fetch::unpacker().is_some()
+    }
+
+    /// Installs `pkg`'s files from what the user has: the vendor's
+    /// installer or program, archives, folders or the firmware files
+    /// themselves. Blocks.
+    fn import_firmware(
         &self,
-        script: &Path,
-        input: &Path,
-        out_dir: &Path,
-        progress: &mut dyn FnMut(String),
-    ) -> Result<Vec<std::path::PathBuf>, BackendError> {
-        firmware::run_script(script, input, out_dir, progress)
+        pkg: &'static Package,
+        paths: &[PathBuf],
+        dest: &Path,
+        progress: &dyn Progress,
+    ) -> Result<Installed, fetch::Error> {
+        fetch::import(pkg, paths, dest, progress)
     }
     /// Loaded once at start.
     fn decoders(&self) -> &[DecoderInfo];

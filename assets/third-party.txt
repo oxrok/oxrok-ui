@@ -489,6 +489,9 @@ get-size2 0.10.3
 gethostname 1.1.0
     License: Apache-2.0
     https://codeberg.org/swsnr/gethostname.rs.git
+getrandom 0.2.17
+    License: MIT OR Apache-2.0
+    https://github.com/rust-random/getrandom
 getrandom 0.3.4
     License: MIT OR Apache-2.0
     https://github.com/rust-random/getrandom
@@ -540,6 +543,12 @@ hmac 0.13.0
 home 0.5.12
     License: MIT OR Apache-2.0
     https://github.com/rust-lang/cargo
+http 1.5.0
+    License: MIT OR Apache-2.0
+    https://github.com/hyperium/http
+httparse 1.10.1
+    License: MIT OR Apache-2.0
+    https://github.com/seanmonstar/httparse
 hybrid-array 0.4.15
     License: MIT OR Apache-2.0
     https://github.com/RustCrypto/hybrid-array
@@ -927,6 +936,9 @@ object 0.41.0
 once_cell 1.21.4
     License: MIT OR Apache-2.0
     https://github.com/matklad/once_cell
+openssl-probe 0.2.2
+    License: MIT OR Apache-2.0
+    https://github.com/rustls/openssl-probe
 option-ext 0.2.0
     License: MPL-2.0
     https://github.com/soc/option-ext.git
@@ -1152,6 +1164,9 @@ result-like-derive 0.5.1
 rfd 0.17.2
     License: MIT
     https://github.com/PolyMeilex/rfd
+ring 0.17.14
+    License: Apache-2.0 AND ISC
+    https://github.com/briansmith/ring
 ron 0.12.2
     License: MIT OR Apache-2.0
     https://github.com/ron-rs/ron
@@ -1167,6 +1182,18 @@ rustix 0.38.44
 rustix 1.1.5
     License: Apache-2.0 WITH LLVM-exception OR Apache-2.0 OR MIT
     https://github.com/bytecodealliance/rustix
+rustls 0.23.46
+    License: Apache-2.0 OR ISC OR MIT
+    https://github.com/rustls/rustls
+rustls-native-certs 0.8.5
+    License: Apache-2.0 OR ISC OR MIT
+    https://github.com/rustls/rustls-native-certs
+rustls-pki-types 1.16.0
+    License: MIT OR Apache-2.0
+    https://github.com/rustls/pki-types
+rustls-webpki 0.103.17
+    License: ISC
+    https://github.com/rustls/webpki
 rustpython-codegen 0.6.0
     License: MIT
     https://github.com/RustPython/RustPython
@@ -1257,6 +1284,12 @@ scrypt 0.12.0
 sctk-adwaita 0.10.1
     License: MIT
     https://github.com/PolyMeilex/sctk-adwaita
+security-framework 3.7.0
+    License: MIT OR Apache-2.0
+    https://github.com/kornelski/rust-security-framework
+security-framework-sys 2.17.0
+    License: MIT OR Apache-2.0
+    https://github.com/kornelski/rust-security-framework
 self_cell 1.3.0
     License: Apache-2.0 OR GPL-2.0-only
     https://github.com/Voultapher/self_cell
@@ -1362,6 +1395,9 @@ strum 0.28.0
 strum_macros 0.28.0
     License: MIT
     https://github.com/Peternator7/strum
+subtle 2.6.1
+    License: BSD-3-Clause
+    https://github.com/dalek-cryptography/subtle
 syn 2.0.119
     License: MIT OR Apache-2.0
     https://github.com/dtolnay/syn
@@ -1497,12 +1533,24 @@ unicode_names2 1.3.0
 unicode_names2 3.1.0
     License: (MIT OR Apache-2.0) AND Unicode-DFS-2016
     https://github.com/progval/unicode_names2
+untrusted 0.9.0
+    License: ISC
+    https://github.com/briansmith/untrusted
+ureq 3.5.2
+    License: MIT OR Apache-2.0
+    https://github.com/algesten/ureq
+ureq-proto 0.7.1
+    License: MIT OR Apache-2.0
+    https://github.com/algesten/ureq-proto
 url 2.5.8
     License: MIT OR Apache-2.0
     https://github.com/servo/rust-url
 utf16_iter 1.1.0
     License: Apache-2.0 OR MIT
     https://github.com/hsivonen/utf16_iter
+utf8-zero 0.8.1
+    License: MIT OR Apache-2.0
+    https://github.com/algesten/utf8-zero
 utf8_iter 1.0.4
     License: Apache-2.0 OR MIT
     https://github.com/hsivonen/utf8_iter
@@ -1521,6 +1569,9 @@ vello_common 0.2.0
 vello_cpu 0.2.0
     License: Apache-2.0 OR MIT
     https://github.com/linebender/vello
+wasi 0.11.1+wasi-snapshot-preview1
+    License: Apache-2.0 WITH LLVM-exception OR Apache-2.0 OR MIT
+    https://github.com/bytecodealliance/wasi
 wasip2 1.0.4+wasi-0.2.12
     License: Apache-2.0 WITH LLVM-exception OR Apache-2.0 OR MIT
     https://github.com/bytecodealliance/wasi-rs
@@ -1804,6 +1855,9 @@ zerofrom 0.1.8
 zerofrom-derive 0.1.8
     License: Unicode-3.0
     https://github.com/unicode-org/icu4x
+zeroize 1.9.1
+    License: Apache-2.0 OR MIT
+    https://github.com/RustCrypto/utils
 zerotrie 0.2.5
     License: Unicode-3.0
     https://github.com/unicode-org/icu4x

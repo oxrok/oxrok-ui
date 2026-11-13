@@ -42,7 +42,7 @@ help:
 	@echo "  make screenshots   regenerate docs/screenshots"
 	@echo "  make notices       regenerate the About dialog's third-party notices"
 	@echo "  make cjk-font      rebuild the Chinese font subsets from src/l10n.rs"
-	@echo "  make firmware-deps fetch sigrok-util's firmware scripts and the fx2lafw firmware into vendor/"
+	@echo "  make firmware-deps fetch the fx2lafw firmware into vendor/"
 	@echo "  make icons         render the app icon (PNG, macOS .icns) from its SVG (needs rsvg-convert)"
 
 # The native macOS menu bar: on by default on macOS;
@@ -111,15 +111,12 @@ screenshots:
 	$(CARGO) test --features mock --test screenshots -- --ignored
 
 ICON_DIR = assets
-# The sigrok-util firmware extraction scripts and the open
-# fx2lafw firmware, into vendor/ (git-ignored) for development runs and
-# packaging.
+# The open fx2lafw firmware, into vendor/ (git-ignored) for development
+# runs and packaging. The app gets any other missing firmware itself
+# (Install firmware, with oxrok-firmware-fetch).
 FX2LAFW_VERSION ?= 0.1.7
 FX2LAFW_URL ?= https://sigrok.org/download/binary/sigrok-firmware-fx2lafw/sigrok-firmware-fx2lafw-bin-$(FX2LAFW_VERSION).tar.gz
 firmware-deps:
-	mkdir -p vendor
-	if [ -d vendor/sigrok-util/.git ]; then git -C vendor/sigrok-util pull -q --ff-only; \
-	else git clone -q --depth 1 https://github.com/sigrokproject/sigrok-util.git vendor/sigrok-util; fi
 	mkdir -p vendor/sigrok-firmware
 	curl -fsSL $(FX2LAFW_URL) | tar -xz -C vendor/sigrok-firmware --strip-components=1
 	@ls vendor/sigrok-firmware | grep -c '\.fw$$' | xargs -I{} echo "vendor/sigrok-firmware: {} fx2lafw files"

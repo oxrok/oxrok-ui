@@ -749,7 +749,8 @@ impl LaApp {
             s.settings.mode,
             s.settings.buffer_mb.saturating_sub(kept_mb).max(BUFFER_MB_FLOOR),
             Box::new(move || repaint_ctx.request_repaint()),
-        );
+        )
+        .pre_trigger(if triggered { trig.pre_trigger_seconds } else { 0.0 });
         data.write().hw_trigger_expected = hw_trigger.is_some();
         // Where the scanner cannot look for the trigger, the position
         // is the device's.

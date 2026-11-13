@@ -135,12 +135,30 @@ pub struct StoreSink {
     buffer_bytes: f64,
     last_trim: Option<Instant>,
     pending: SharedPending,
+    /// Triggered mode: the time before the trigger that was asked for,
+    /// which the memory policy keeps.
+    pre_trigger_seconds: f64,
 }
 
 impl StoreSink {
     pub fn new(data: SharedCapture, mode: CaptureMode, buffer_mb: u32, repaint: Box<dyn Fn() + Send>) -> Self {
         let pending = data.read().pending.clone();
-        Self { data, repaint, mode, buffer_bytes: buffer_mb as f64 * 1e6, last_trim: None, pending }
+        Self {
+            data,
+            repaint,
+            mode,
+            buffer_bytes: buffer_mb as f64 * 1e6,
+            last_trim: None,
+            pending,
+            pre_trigger_seconds: 0.0,
+        }
+    }
+
+    /// The time to keep before the trigger, whatever the buffer.
+    #[must_use]
+    pub fn pre_trigger(mut self, seconds: f64) -> Self {
+        self.pre_trigger_seconds = seconds.max(0.0);
+        self
     }
 
     /// Stores the batched logic data now.
@@ -165,9 +183,14 @@ impl StoreSink {
             buffer_mb: self.buffer_bytes / 1e6,
             processed_secs: (end - begin) as f64 / rate as f64,
         };
-        // Triggered mode needs the trigger's state.
+        // Triggered mode needs the trigger's state. What is kept begins
+        // the pre-trigger time before the trigger, in whole samples, so
+        // a trim ends exactly there.
+        let pre = (self.pre_trigger_seconds * rate as f64).ceil() as u64;
         let trigger = (self.mode == crate::core::capture::CaptureMode::Triggered).then(|| match d.trigger {
-            Some(t) => TriggerProgress::Found { at_secs: t.saturating_sub(begin) as f64 / rate as f64 },
+            Some(t) => {
+                TriggerProgress::Found { at_secs: t.saturating_sub(pre).saturating_sub(begin) as f64 / rate as f64 }
+            }
             None => TriggerProgress::Searching {
                 unsearched_secs: end.saturating_sub(d.trigger_scan.max(begin)) as f64 / rate as f64,
             },
@@ -180,7 +203,7 @@ impl StoreSink {
                     return;
                 }
                 self.last_trim = Some(Instant::now());
-                let keep = (keep_secs * rate as f64) as u64;
+                let keep = (keep_secs * rate as f64).round() as u64;
                 let new_begin = end.saturating_sub(keep).max(begin);
                 if let Some(ingest) = d.ingest.as_mut() {
                     for ch in ingest.channels_mut() {
@@ -326,5 +349,39 @@ mod tests {
         sink.flush();
         sink.on_analog(ChannelId::analog(0), 0, &[0.0; 1000]);
         assert_eq!(data.read().stop_request, Some(StopReason::BufferFull));
+    }
+    /// A full buffer in Trigger mode discards what is older than the
+    /// pre-trigger time, never that time itself, and stops there.
+    #[test]
+    fn triggered_keeps_the_pre_trigger_time() {
+        let run = |pre_seconds: f64| {
+            let data = SharedCapture::default();
+            let mut sink =
+                StoreSink::new(data.clone(), CaptureMode::Triggered, 0, Box::new(|| {})).pre_trigger(pre_seconds);
+            sink.buffer_bytes = 4_000.0;
+            sink.on_header(header(1_000));
+            let packet: Vec<u8> = (0..1000).map(|i| (i % 2) as u8).collect();
+            let volts = vec![1.0f32; 1000];
+            for k in 0..20u64 {
+                sink.on_logic(k * 1000, 1, &packet);
+                sink.flush();
+                sink.on_analog(ChannelId::analog(0), k * 1000, &volts);
+                sink.last_trim = None;
+                // The trigger is found 2.5 s in, once that data is there.
+                if k == 2 {
+                    let mut d = data.write();
+                    d.trigger = Some(2_500);
+                    d.trigger_scan = 3_000;
+                }
+            }
+            let d = data.read();
+            (d.sample_range().unwrap().0, d.stop_request)
+        };
+        // 0.3 s before the trigger at 2.5 s: the data begins at 2.2 s.
+        assert_eq!(run(0.3), (2_200, Some(StopReason::BufferFull)));
+        // More than there is: everything from the start stays.
+        assert_eq!(run(10.0), (0, Some(StopReason::BufferFull)));
+        // None asked for: from the trigger on, as before.
+        assert_eq!(run(0.0), (2_500, Some(StopReason::BufferFull)));
     }
 }

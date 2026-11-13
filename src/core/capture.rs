@@ -199,7 +199,9 @@ pub struct MemoryUse {
 /// The trigger's state for the memory policy (Triggered mode).
 #[derive(Copy, Clone, Debug, PartialEq)]
 pub enum TriggerProgress {
-    /// Found at this many seconds after the processed start.
+    /// Found: what must be kept begins this many seconds after the
+    /// processed start. That is the trigger, less the time before it
+    /// that was asked for.
     Found { at_secs: f64 },
     /// Still searching; this much processed data is not scanned yet.
     Searching { unsearched_secs: f64 },
@@ -226,7 +228,7 @@ pub fn memory_policy(mode: CaptureMode, m: MemoryUse, trigger: Option<TriggerPro
         CaptureMode::Continuous if m.backlog_mb > 0.9 * m.buffer_mb => MemoryDecision::Stop(StopReason::Backlog),
         CaptureMode::Continuous => trim(trim_keep(&m)),
         CaptureMode::Triggered => match trigger {
-            // Never trim past the trigger; stop once there.
+            // Never trim past what the trigger keeps; stop once there.
             Some(TriggerProgress::Found { at_secs }) => {
                 if at_secs <= 0.0 {
                     return MemoryDecision::Stop(StopReason::BufferFull);

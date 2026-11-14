@@ -304,8 +304,10 @@ jobs:
 
   # A published release gets the packages that were built. The only job
   # that can write to the repository: it builds nothing and runs nothing
-  # from the build, the packages are data to it. One that is missing fails
-  # the job, after the others are attached.
+  # from the build, the packages are data to it. A package whose job did
+  # not succeed is not attached and fails this job, after the others are
+  # attached. For macOS that job is macos-verify: the .dmg is an artifact
+  # from macos-sign on, and one that did not verify stays off the release.
   attach:
     if: ${{ !cancelled() && github.event_name == 'release' }}
     needs: [macos-verify, linux, windows]
@@ -317,12 +319,20 @@ jobs:
       - env:
           GH_TOKEN: ${{ github.token }}
           TAG: ${{ github.event.release.tag_name }}
+          MACOS: ${{ needs.macos-verify.result }}
+          LINUX: ${{ needs.linux.result }}
+          WINDOWS: ${{ needs.windows.result }}
         run: |
           set -euo pipefail
           mkdir dist
           missing=0
-          for name in macos linux windows; do
-            if ! gh run download "$GITHUB_RUN_ID" --repo "$GITHUB_REPOSITORY" --name "$name" --dir dist; then
+          for package in "macos $MACOS" "linux $LINUX" "windows $WINDOWS"; do
+            name=${package% *}
+            result=${package#* }
+            if [ "$result" != success ]; then
+              echo "::error::the $name package is not attached: its job ended with $result"
+              missing=1
+            elif ! gh run download "$GITHUB_RUN_ID" --repo "$GITHUB_REPOSITORY" --name "$name" --dir dist; then
               echo "::error::no $name package in this run"
               missing=1
             fi

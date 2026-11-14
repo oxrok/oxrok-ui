@@ -19,6 +19,13 @@ PIO ?= pio
 # The codesign identity for `make bundle` (from
 # `security find-identity -v -p codesigning`); ad-hoc when empty.
 SIGN_IDENTITY ?=
+# Notarization of a `make bundle` signed with a Developer ID: NOTARY_PROFILE,
+# a keychain profile of `xcrun notarytool store-credentials`; or NOTARY_KEY,
+# an App Store Connect API key (.p8), with NOTARY_KEY_ID and NOTARY_ISSUER.
+NOTARY_PROFILE ?=
+NOTARY_KEY ?=
+NOTARY_KEY_ID ?=
+NOTARY_ISSUER ?=
 
 .PHONY: help cjk-font notices firmware-deps perf bundle run run-mock test test-oxrok test-hil siggen siggen-loop siggen-flash oxrok-scan oxrok-info check screenshots icons clean
 
@@ -38,7 +45,8 @@ help:
 	@echo "  make check         rustfmt + clippy, as in CI"
 	@echo "  make perf          the performance budgets, in release"
 	@echo "  make bundle        macOS: .app and .dmg in dist/ (packaging/), with the oxrok CLI;"
-	@echo "                     signed with SIGN_IDENTITY (from `security find-identity -v -p codesigning`), ad-hoc when empty"
+	@echo "                     signed with SIGN_IDENTITY (from 'security find-identity -v -p codesigning'), ad-hoc when empty;"
+	@echo "                     notarized with NOTARY_PROFILE (a keychain profile of 'xcrun notarytool store-credentials')"
 	@echo "  make screenshots   regenerate docs/screenshots"
 	@echo "  make notices       regenerate the About dialog's third-party notices"
 	@echo "  make cjk-font      rebuild the Chinese font subsets from src/l10n.rs"
@@ -123,7 +131,8 @@ firmware-deps:
 
 # 22 Packaging (macOS): a .app and .dmg in dist/, with the decoders,
 # vendor/ and the oxrok CLI (oxrok and RustPython are in the binaries).
-# Signed with SIGN_IDENTITY (a codesign identity), ad-hoc when empty.
+# Signed with SIGN_IDENTITY (a codesign identity), ad-hoc when empty, and
+# with it notarized with NOTARY_PROFILE or NOTARY_KEY.
 VERSION := $(shell sed -n 's/^version = "\(.*\)"/\1/p' Cargo.toml | head -1)
 # The oxrok CLI, built from the source cargo fetched for the oxrok this
 # build links (a crates.io release or a git revision, as Cargo.lock has
@@ -140,9 +149,11 @@ bundle:
 	work=$$(mktemp -d); trap 'rm -rf "$$work"' EXIT; \
 	cp -R "$$src" "$$work/oxrok"; \
 	(cd "$$work/oxrok" && CARGO_TARGET_DIR=$(TARGET_DIR) $(CARGO) build --release --no-default-features --features cli,nusb,rustpython)
-	python3 packaging/macos/bundle.py --bin "$(TARGET_DIR)/release/oxrok-ui" --cli "$(TARGET_DIR)/release/oxrok" --version $(VERSION) --out dist $(if $(SIGN_IDENTITY),--sign "$(SIGN_IDENTITY)")
-	"dist/Oxrok UI.app/Contents/MacOS/oxrok-ui" --self-test
-	"dist/Oxrok UI.app/Contents/MacOS/oxrok" --version | head -n 1
+	python3 packaging/macos/bundle.py --bin "$(TARGET_DIR)/release/oxrok-ui" --cli "$(TARGET_DIR)/release/oxrok" --version $(VERSION) --out dist $(if $(SIGN_IDENTITY),--sign "$(SIGN_IDENTITY)") \
+		$(if $(NOTARY_PROFILE),--notary-profile "$(NOTARY_PROFILE)") \
+		$(if $(NOTARY_KEY),--notary-key "$(NOTARY_KEY)" --notary-key-id "$(NOTARY_KEY_ID)" --notary-issuer "$(NOTARY_ISSUER)")
+	dist/Oxrok.app/Contents/MacOS/oxrok-ui --self-test
+	dist/Oxrok.app/Contents/MacOS/oxrok --version | head -n 1
 
 # The performance budgets, timed in release.
 perf:

@@ -39,7 +39,11 @@ jobs:
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: snapshot-diffs-${{ matrix.os }}
-          path: "**/tests/snapshots/*.diff.png"
+          # The .new.png is what the test drew: on macOS, where the
+          # snapshots are made, it is the snapshot to accept.
+          path: |
+            **/tests/snapshots/*.diff.png
+            **/tests/snapshots/*.new.png
 
   # The oxrok backend and decoders with the demo driver (roadmap §3, §6).
   oxrok:

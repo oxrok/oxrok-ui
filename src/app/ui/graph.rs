@@ -883,11 +883,14 @@ impl LaApp {
             None => text,
         };
         let theme = ui.la_theme();
-        let area = Rect::from_min_max(l.toolbar.min, pos2(l.toolbar.left() + l.label_w, l.toolbar.bottom()));
+        // Right of the Inspector toggle, which sits at the toolbar's left end.
+        let left = l.toolbar.left() + CAPTURE_ITEM_W;
+        let right = l.toolbar.left() + l.label_w;
+        let area = Rect::from_min_max(pos2(left, l.toolbar.top()), pos2(right, l.toolbar.bottom()));
         let resp = ui.interact(area, ui.make_persistent_id("capture_status"), Sense::hover());
         resp.widget_info(|| WidgetInfo::labeled(Role::Label, true, &text));
         ui.painter().text(
-            area.left_center() + vec2(12.0, 0.0),
+            area.left_center() + vec2(8.0, 0.0),
             egui::Align2::LEFT_CENTER,
             &text,
             Text::CaptionMed.font_id(),

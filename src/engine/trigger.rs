@@ -33,9 +33,9 @@ impl TriggerScanner {
     }
 
     /// The trigger of a device that reported its own at sample `at`: the
-    /// exact edge just around it (the software match), or else the
-    /// device's position. `data` is the range stored so far and `ended`
-    /// whether more will come; `None` waits for more.
+    /// match nearest to it (the data before the trigger may match too),
+    /// or else the device's position. `data` is the range stored so far
+    /// and `ended` whether more will come; `None` waits for more.
     ///
     /// A capture that starts at the device's trigger has its edge before
     /// the data, and a matching edge after it is another one: the trigger
@@ -52,13 +52,19 @@ impl TriggerScanner {
         if at <= begin {
             return Some(at);
         }
-        self.pos = self.pos.max(at.saturating_sub(WINDOW));
         let stop = end.min(at + WINDOW);
-        match self.scan(channel, stop) {
-            Some(t) => Some(t),
-            None if stop >= at + WINDOW || ended => Some(at.min(end.saturating_sub(1))),
-            None => None,
+        if stop < at + WINDOW && !ended {
+            // Not all of the window yet.
+            return None;
         }
+        self.pos = self.pos.max(at.saturating_sub(WINDOW));
+        let mut nearest: Option<u64> = None;
+        while let Some(t) = self.scan(&channel, stop) {
+            if nearest.is_none_or(|n| t.abs_diff(at) < n.abs_diff(at)) {
+                nearest = Some(t);
+            }
+        }
+        Some(nearest.unwrap_or(at.min(end.saturating_sub(1))))
     }
 
     /// Scans transitions in `[progress, end)`; returns the trigger sample
@@ -184,14 +190,15 @@ mod tests {
         }
     }
 
-    /// With the device's own trigger position: the edge near it, and the
-    /// position itself where the capture starts at the trigger.
+    /// With the device's own trigger position: the match nearest to it,
+    /// and the position itself where the capture starts at the trigger.
     #[test]
     fn near_the_devices_trigger() {
         let rising = || TriggerScanner::new(trig(TriggerEvent::Rising, 0.0, 0.0, vec![]), 1);
-        let d0 = chan(false, &[10, 20, 300, 520, 524], 1000);
+        // Rises at 10, 300, 500, 524 and 560.
+        let d0 = chan(false, &[10, 20, 300, 480, 500, 520, 524, 540, 560], 1000);
         let get = |c: ChannelId| (c.index == 0).then_some(&d0);
-        // The edges at 10 and 300 are pre-trigger data; the device's
+        // The edges before it are pre-trigger data; the device's
         // position is a few samples late.
         assert_eq!(rising().scan_near(get, 527, (0, 1000), true), Some(524));
         // No edge around it: the device's position.

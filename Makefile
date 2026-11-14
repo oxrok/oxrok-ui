@@ -27,7 +27,7 @@ NOTARY_KEY ?=
 NOTARY_KEY_ID ?=
 NOTARY_ISSUER ?=
 
-.PHONY: help cjk-font notices firmware-deps perf bundle run run-mock test test-oxrok test-hil siggen siggen-loop siggen-flash oxrok-scan oxrok-info check screenshots icons clean
+.PHONY: help cjk-font notices firmware-deps perf bundle run run-mock test test-oxrok test-hil siggen siggen-loop siggen-flash oxrok-scan oxrok-info check screenshots icons dmg-background clean
 
 help:
 	@echo
@@ -52,6 +52,7 @@ help:
 	@echo "  make cjk-font      rebuild the Chinese font subsets from src/l10n.rs"
 	@echo "  make firmware-deps fetch the fx2lafw firmware into vendor/"
 	@echo "  make icons         render the app icon (PNG, macOS .icns) from its SVG (needs rsvg-convert)"
+	@echo "  make dmg-background  render the picture behind the macOS .dmg's window from its SVG (needs rsvg-convert)"
 
 # The native macOS menu bar: on by default on macOS;
 # MACOS_MENU= (empty) keeps the in-window menu bar.
@@ -182,6 +183,11 @@ icons:
 		done; \
 		iconutil -c icns $$set_ -o $(ICON_DIR)/AppIcon.icns; \
 	else echo "iconutil not found (macOS only): skipping AppIcon.icns"; fi
+
+# The picture behind the macOS .dmg's window, at both resolutions.
+dmg-background:
+	rsvg-convert -w 660 -h 420 packaging/macos/dmg/background.svg -o packaging/macos/dmg/background.png
+	rsvg-convert -w 1320 -h 840 packaging/macos/dmg/background.svg -o packaging/macos/dmg/background@2x.png
 
 clean:
 	$(CARGO) clean

@@ -10,7 +10,8 @@
 #   macos-sign    signs it with the Developer ID certificate and has Apple
 #                 notarize it. The only job with the keys: it builds nothing
 #                 and runs nothing from the build.
-#   macos-verify  opens the .dmg as a user would and runs the app. No secrets.
+#   macos-verify  opens the .dmg as a user would and runs the app, and
+#                 uploads pictures of its window. No secrets.
 #
 # Elsewhere (a fork) macos uploads its ad-hoc signed .dmg and the other two
 # are skipped.
@@ -93,7 +94,7 @@ jobs:
       actions: read
       contents: read
     steps:
-      - name: The app from the build, and this commit's packaging script
+      - name: The app from the build, and this commit's packaging script and .dmg background
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
@@ -103,9 +104,11 @@ jobs:
           tar -C dist -xf "$RUNNER_TEMP/macos-app.tar"
           # After the tar, and outside the workspace, so that nothing in
           # the artifact can stand in for it.
-          mkdir "$RUNNER_TEMP/packaging"
-          gh api -H "Accept: application/vnd.github.raw" \
-            "repos/$GITHUB_REPOSITORY/contents/packaging/macos/bundle.py?ref=$GITHUB_SHA" > "$RUNNER_TEMP/packaging/bundle.py"
+          mkdir -p "$RUNNER_TEMP/packaging/dmg"
+          for file in bundle.py dmg/background.png dmg/background@2x.png; do
+            gh api -H "Accept: application/vnd.github.raw" \
+              "repos/$GITHUB_REPOSITORY/contents/packaging/macos/$file?ref=$GITHUB_SHA" > "$RUNNER_TEMP/packaging/$file"
+          done
       - name: Sign, notarize and staple
         env:
           MACOS_CERT_P12: ${{ secrets.MACOS_CERT_P12 }}
@@ -185,6 +188,33 @@ jobs:
           spctl --assess --type execute --verbose=2 "$app"
           "$app/Contents/MacOS/oxrok-ui" --self-test
           "$app/Contents/MacOS/oxrok" --version | head -n 1
+          # The window: a link to drag the app to, the layout Finder wrote
+          # and the background.
+          [ "$(readlink "$RUNNER_TEMP/dmg/Applications")" = /Applications ]
+          [ -s "$RUNNER_TEMP/dmg/.DS_Store" ]
+          [ -s "$RUNNER_TEMP/dmg/.background/background.tiff" ]
+          hdiutil detach "$RUNNER_TEMP/dmg"
+      # For a person to look at: the window as Finder shows it, in both
+      # appearances. A runner whose desktop won't open it fails nothing.
+      - name: Pictures of the .dmg's window
+        continue-on-error: true
+        run: |
+          set -euo pipefail
+          hdiutil attach -readonly -noautoopen dmg/*.dmg
+          mkdir window
+          for appearance in light dark; do
+            osascript -e "tell application \"System Events\" to tell appearance preferences to set dark mode to $([ $appearance = dark ] && echo true || echo false)" \
+              || echo "::warning::the appearance did not change to $appearance"
+            osascript -e 'tell application "Finder" to close every window'
+            open "/Volumes/Oxrok UI"
+            sleep 5
+            screencapture -x "window/dmg-window-$appearance.png"
+          done
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: macos-dmg-window
+          path: window/*.png
+          if-no-files-found: warn
 
   linux:
     if: inputs.linux

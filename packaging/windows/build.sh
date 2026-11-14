@@ -37,4 +37,5 @@ mkdir -p "$SHARE/sigrok-firmware"
 "$STAGE/bin/oxrok-ui.exe" --self-test
 
 # The installer (Inno Setup's iscc on PATH).
-iscc //DVersion="$VERSION" //DStage="$(cygpath -w "$STAGE")" //O"$(cygpath -w "$OUT")" packaging/windows/installer.iss
+# Absolute paths: iscc reads a relative one from the script's directory.
+iscc //DVersion="$VERSION" //DStage="$(cygpath -aw "$STAGE")" //O"$(cygpath -aw "$OUT")" packaging/windows/installer.iss

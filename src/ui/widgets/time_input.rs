@@ -50,6 +50,16 @@ fn decimals_for(step: f64) -> usize {
     (0..9).find(|&d| (step * 10f64.powi(d as i32)).fract().abs() < 1e-6).unwrap_or(9)
 }
 
+/// A whole number up to `max`, kept as it is typed: a float would
+/// round the ones above 2^53.
+pub fn whole_input(ui: &mut Ui, label: &str, value: &mut u64, max: u64) -> bool {
+    parsed(ui, label, value, &|v| v.to_string(), &|t| parse_whole(t, max))
+}
+
+fn parse_whole(input: &str, max: u64) -> Option<u64> {
+    input.trim().parse::<u64>().ok().map(|v| v.min(max))
+}
+
 /// Text committed on Enter or blur; `true` when it changed.
 pub fn text_input(ui: &mut Ui, label: &str, value: &mut String) -> bool {
     let id = Id::unique(("crate::ui::text_input", label));
@@ -105,6 +115,16 @@ pub fn parsed_input(
     format: &dyn Fn(f64) -> String,
     parse: &dyn Fn(&str) -> Option<f64>,
 ) -> bool {
+    parsed(ui, label, value, format, &|t| parse(t).filter(|v| v.is_finite()))
+}
+
+fn parsed<T: Copy + PartialEq>(
+    ui: &mut Ui,
+    label: &str,
+    value: &mut T,
+    format: &dyn Fn(T) -> String,
+    parse: &dyn Fn(&str) -> Option<T>,
+) -> bool {
     let now = crate::ui::clock::now(ui.ctx());
     let id = Id::unique(("crate::ui::time_input", label));
     let mut st: EditState = ui.ctx().data(|d| d.get_temp(id)).unwrap_or_default();
@@ -128,11 +148,11 @@ pub fn parsed_input(
     if resp.lost_focus() || (resp.has_focus() && ui.input(|i| i.key_pressed(Key::Enter))) {
         st.editing = false;
         match parse(&st.text) {
-            Some(v) if v.is_finite() => {
+            Some(v) => {
                 changed = v != *value;
                 *value = v;
             }
-            _ => st.error_until = Some(now + ERROR_FLASH),
+            None => st.error_until = Some(now + ERROR_FLASH),
         }
         st.text = format(*value);
     }
@@ -177,5 +197,14 @@ mod tests {
         assert_eq!(decimals_for(0.01), 2);
         assert_eq!(decimals_for(1.0), 0);
         assert_eq!(decimals_for(0.05), 2);
+    }
+
+    #[test]
+    fn whole_numbers() {
+        // 2^53 + 1, which no f64 is.
+        assert_eq!(parse_whole(" 9007199254740993 ", u64::MAX), Some(9_007_199_254_740_993));
+        assert_eq!(parse_whole("300", 255), Some(255));
+        assert_eq!(parse_whole("1.5", 255), None);
+        assert_eq!(parse_whole("-1", 255), None);
     }
 }

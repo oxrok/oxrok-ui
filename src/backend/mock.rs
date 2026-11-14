@@ -732,15 +732,17 @@ fn stream_triggered(
             (elapsed.as_nanos() * generator.rate as u128 / 1_000_000_000) as u64
         }
     };
+    // The pattern's sample the device is gone at, as in `stream`.
+    let unplugged = options.disconnect_after_samples.unwrap_or(u64::MAX);
     let mut s = 0u64;
     let fired = loop {
         if stop.load(Ordering::SeqCst) {
             return EndReason::Stopped;
         }
-        if options.disconnect_after_samples.is_some_and(|d| s >= d) {
+        if s >= unplugged {
             return EndReason::Disconnected;
         }
-        let end = available().min(s.saturating_add(chunk));
+        let end = available().min(s.saturating_add(chunk)).min(unplugged);
         if end <= s || generator.channels.is_empty() {
             std::thread::sleep(Duration::from_millis(2));
             continue;
@@ -767,9 +769,12 @@ fn stream_triggered(
         if s >= last {
             return EndReason::Completed;
         }
+        if s >= unplugged {
+            return EndReason::Disconnected;
+        }
         // The data before the trigger is in the device already.
         let stop_at = if reported { last } else { fired };
-        let end = available().max(fired).min(s.saturating_add(chunk)).min(stop_at);
+        let end = available().max(fired).min(s.saturating_add(chunk)).min(stop_at).min(unplugged);
         if end <= s {
             std::thread::sleep(Duration::from_millis(2));
             continue;
@@ -1108,6 +1113,38 @@ mod tests {
         let c = c.0.lock().unwrap();
         assert_eq!(c.end, Some(EndReason::Disconnected));
         assert_eq!(c.ingest.as_ref().unwrap().next_sample(), 1234);
+    }
+
+    /// A device unplugged while it waits for its trigger, or while it
+    /// delivers the capture, ends as one.
+    #[test]
+    fn a_triggered_capture_is_unplugged() {
+        let d0 = ChannelId::digital(0);
+        let run = |unplugged| {
+            let hw_trigger = Some(HwTriggerCaps {
+                matches: vec![TriggerMatch::Rising],
+                capture_ratio: true,
+                ..HwTriggerCaps::default()
+            });
+            let options =
+                MockOptions { hw_trigger, disconnect_after_samples: Some(unplugged), ..MockOptions::default() };
+            let backend = MockBackend::new(options);
+            let mut dev = device(&backend, 1);
+            dev.apply(&DeviceConfig::new(vec![d0], 1_000_000)).unwrap();
+            let sink = Collect::default();
+            let trigger = Some(HwTrigger::one_stage(vec![(d0, TriggerMatch::Rising)], 0));
+            let plan = AcquisitionPlan { trigger, ..AcquisitionPlan::new(AcquisitionLimit::Samples(10_000)) };
+            dev.start(plan, Box::new(sink.clone())).unwrap();
+            while sink.0.lock().unwrap().end.is_none() {
+                std::thread::sleep(Duration::from_millis(1));
+            }
+            let c = sink.0.lock().unwrap();
+            (c.end.clone(), c.ingest.as_ref().unwrap().next_sample())
+        };
+        // D0 rises at sample 1000, where the capture begins.
+        assert_eq!(run(50_000), (Some(EndReason::Completed), 10_000));
+        assert_eq!(run(1_500), (Some(EndReason::Disconnected), 500));
+        assert_eq!(run(700), (Some(EndReason::Disconnected), 0));
     }
 
     #[test]

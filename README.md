@@ -113,8 +113,12 @@ make run                           # the app on oxrok (release; PROFILE=dev for 
     the app and the `.dmg`.
 - **Linux and Windows:** `packaging/linux/appimage.sh` (AppImage) and
   `packaging/windows/build.sh` (MSYS2 + Inno Setup).
-- **CI:** the *Package* workflow (Actions → Package → Run workflow)
-  builds all three, runs `--self-test` on each and uploads them.
+- **CI:** the *Package* workflow builds all three, runs `--self-test` on
+  each and uploads them.
+  - It runs for every published release, and attaches the three packages
+    to the release, each with a `.sha256`.
+  - By hand (Actions → Package → Run workflow) it builds the ones picked
+    and keeps them as the run's artifacts.
   - The macOS `.dmg` is signed with the Developer ID certificate and
     notarized, in a job of its own that holds the keys.
 

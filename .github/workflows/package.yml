@@ -1,6 +1,8 @@
-# 22 Packaging: builds the installers on demand (Actions → Package → Run
-# workflow). Each job runs the app's --self-test on the result and
-# uploads it as an artifact.
+# 22 Packaging: builds the installers, on demand (Actions → Package → Run
+# workflow) and for every published release. Each job runs the app's
+# --self-test on the result and uploads it as an artifact; for a release,
+# the attach job then puts the three packages on the release, each with a
+# .sha256.
 #
 # macOS, in the oxrok organization, is three jobs, so that the signing keys
 # are never in the job that runs the build (the crates' build scripts,
@@ -18,6 +20,9 @@
 name: Package
 
 on:
+  # A release builds all three; the inputs are for a run by hand.
+  release:
+    types: [published]
   workflow_dispatch:
     inputs:
       macos:
@@ -41,7 +46,7 @@ env:
 
 jobs:
   macos:
-    if: inputs.macos
+    if: github.event_name == 'release' || inputs.macos
     runs-on: macos-15
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -217,7 +222,7 @@ jobs:
           if-no-files-found: warn
 
   linux:
-    if: inputs.linux
+    if: github.event_name == 'release' || inputs.linux
     # The oldest supported runner, so the AppImage runs on older glibc.
     runs-on: ubuntu-22.04
     steps:
@@ -255,7 +260,7 @@ jobs:
           path: dist/*.AppImage
 
   windows:
-    if: inputs.windows
+    if: github.event_name == 'release' || inputs.windows
     runs-on: windows-latest
     defaults:
       run:
@@ -285,3 +290,39 @@ jobs:
         with:
           name: windows
           path: dist/*-setup.exe
+
+  # A published release gets the packages that were built. The only job
+  # that can write to the repository: it builds nothing and runs nothing
+  # from the build, the packages are data to it. One that is missing fails
+  # the job, after the others are attached.
+  attach:
+    if: ${{ !cancelled() && github.event_name == 'release' }}
+    needs: [macos-verify, linux, windows]
+    runs-on: ubuntu-24.04
+    permissions:
+      actions: read
+      contents: write
+    steps:
+      - env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.event.release.tag_name }}
+        run: |
+          set -euo pipefail
+          mkdir dist
+          missing=0
+          for name in macos linux windows; do
+            if ! gh run download "$GITHUB_RUN_ID" --repo "$GITHUB_REPOSITORY" --name "$name" --dir dist; then
+              echo "::error::no $name package in this run"
+              missing=1
+            fi
+          done
+          cd dist
+          for file in *; do
+            [ -f "$file" ] || continue
+            sha256sum "$file" > "$file.sha256"
+          done
+          ls -l
+          if [ -n "$(ls)" ]; then
+            gh release upload "$TAG" --repo "$GITHUB_REPOSITORY" --clobber ./*
+          fi
+          exit "$missing"

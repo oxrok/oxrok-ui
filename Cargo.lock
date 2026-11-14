@@ -3512,7 +3512,7 @@ dependencies = [
 [[package]]
 name = "oxrok"
 version = "0.2.0"
-source = "git+https://github.com/oxrok/oxrok?rev=4b4ad2cea63cd8e227d76782b416c3f3ab88102f#4b4ad2cea63cd8e227d76782b416c3f3ab88102f"
+source = "git+https://github.com/oxrok/oxrok?rev=e7143e9d4b62f7c8fac61cf065968eba838f558c#e7143e9d4b62f7c8fac61cf065968eba838f558c"
 dependencies = [
  "aes",
  "async-hid",

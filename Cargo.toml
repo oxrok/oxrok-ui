@@ -49,7 +49,7 @@ log = { version = "0.4", features = ["std"] }
 # From oxrok until its next release: the software triggers with value
 # ranges, or/and and pulse widths, matched a word of samples at a time,
 # and the trigger hold-off (oxrok pull request 110).
-oxrok = { git = "https://github.com/oxrok/oxrok", rev = "4b4ad2cea63cd8e227d76782b416c3f3ab88102f", default-features = false, features = ["nusb", "rustpython"] }
+oxrok = { git = "https://github.com/oxrok/oxrok", rev = "e7143e9d4b62f7c8fac61cf065968eba838f558c", default-features = false, features = ["nusb", "rustpython"] }
 # The firmware registry: downloads what a device is missing over HTTPS
 # (ureq, rustls), or takes it from the vendor's software.
 oxrok-firmware-fetch = "0.2"

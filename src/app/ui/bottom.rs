@@ -301,7 +301,7 @@ impl LaApp {
         if !s.notes.trim().is_empty() {
             p.circle_filled(pos2(rect.right() - 8.0, rect.top() + 8.0), 3.0, theme.color(Token::Ink2));
         }
-        if resp.on_hover_text(crate::l10n::tr("Notes (Alt+5)")).clicked() {
+        if resp.on_hover_text(crate::l10n::tr("Notes")).clicked() {
             self.toggle_notes_panel();
         }
     }

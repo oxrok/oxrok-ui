@@ -1,5 +1,5 @@
 #![cfg(feature = "mock")]
-//! The trigger icons on the channel rows and Trigger Details.
+//! The trigger icons on the channel rows and the Inspector's Trigger tab.
 
 use egui::{Event, Key, Modifiers, PointerButton, Pos2, Role};
 use egui_kittest::Harness;
@@ -93,6 +93,19 @@ impl Rig {
         self.h.state().session().unwrap().settings.trigger.clone()
     }
 
+    /// The Inspector's tab, if the Inspector is open.
+    fn tab(&self) -> Option<String> {
+        let i = &self.h.state().settings().inspector;
+        i.open.then(|| i.tab.clone())
+    }
+
+    /// Whether a radio button of the Trigger tab is the chosen one.
+    fn chosen(&self, label: &str) -> bool {
+        let node = self.h.get_by_role_and_label(Role::RadioButton, label);
+        node.accesskit_node().toggled() == Some(egui::accesskit::Toggled::True)
+            || node.accesskit_node().is_selected() == Some(true)
+    }
+
     fn mode(&self) -> CaptureMode {
         self.h.state().session().unwrap().settings.mode
     }
@@ -100,6 +113,13 @@ impl Rig {
     fn click(&mut self, role: Role, label: &str) {
         self.h.get_by_role_and_label(role, label).click();
         self.h.run_steps(3);
+    }
+
+    /// Scrolls a control of the Inspector into view and clicks it.
+    fn click_in_tab(&mut self, role: Role, label: &str) {
+        self.h.get_by_role_and_label(role, label).scroll_to_me();
+        self.h.run_steps(3);
+        self.click(role, label);
     }
 
     fn right_click(&mut self, label: &str) {
@@ -204,8 +224,8 @@ fn the_cycle_follows_the_device() {
     assert!(r.trigger().is_empty());
 }
 
-/// Two stages: columns A and B with their letters, the details of a
-/// stage on a right click, and the device's trigger finding the second
+/// Two stages: columns A and B with their letters, the Trigger tab on a
+/// stage with a right click, and the device's trigger finding the second
 /// falling edge after a rising one.
 #[test]
 fn two_stages_and_details() {
@@ -217,22 +237,33 @@ fn two_stages_and_details() {
     r.click(Role::Button, "Trigger B on D0");
     assert_eq!((r.trigger().get(0, D0), r.trigger().get(1, D0)), (Some(Match::Rising), Some(Match::Falling)));
 
-    // The row's own menu stays where it was; the icon opens the details.
+    // The row's own menu stays where it was; the icon opens the Trigger
+    // tab on its stage.
+    assert_eq!(r.tab(), None, "the Inspector starts closed");
     r.right_click("Trigger B on D0");
-    r.h.get_by_label("Trigger Details");
+    assert_eq!(r.tab().as_deref(), Some("trigger"));
     assert!(r.h.query_by_label("Rename").is_none(), "not the row menu");
+    assert!(r.chosen("Stage: Stage B"), "the stage of the icon");
+    r.h.get_by_label("The device waits for this trigger.");
     r.click(Role::CheckBox, "Trigger on the Nth match");
     assert_eq!(r.trigger().stages[1].count, Some(StageCount { n: 2, consecutive: false }), "of stage B");
     assert_eq!(r.trigger().stages[0].count, None);
     // A count and a duration do not go together.
     assert!(r.h.get_by_role_and_label(Role::CheckBox, "Pulse width").accesskit_node().is_disabled());
-    r.click(Role::RadioButton, "Stages A and B: A or B");
+    r.h.snapshot("trigger_tab");
+    // How the stages combine is further down.
+    r.click_in_tab(Role::RadioButton, "Stages A and B: A or B");
     assert_eq!(r.trigger().combine, Combine::Or);
-    r.click(Role::RadioButton, "Stages A and B: A, then B");
+    r.click_in_tab(Role::RadioButton, "Stages A and B: A, then B");
     r.h.run_steps(3);
-    r.h.snapshot("trigger_details");
-    r.click(Role::Button, "Done");
-    assert!(r.h.query_by_label("Trigger Details").is_none());
+    r.h.snapshot("trigger_tab_stages");
+    // The stage letter above the icons shows its stage.
+    r.click(Role::Button, "Trigger stage A details");
+    assert!(r.chosen("Stage: Stage A"));
+    assert_eq!(r.tab().as_deref(), Some("trigger"), "the tab stays");
+    r.h.key_press_modifiers(Modifiers::ALT, Key::I);
+    r.h.run_steps(3);
+    assert_eq!(r.tab(), None);
     r.h.snapshot("trigger_icons_two_stage");
 
     // The command line says the same.
@@ -261,21 +292,26 @@ fn two_stages_and_details() {
     assert_eq!((d0.level_at(t - 12_001), d0.level_at(t - 12_000)), (Some(false), Some(true)));
 }
 
-/// Trigger Details from the Device tab: the stage in words, a pulse
-/// width for the app to find on a device without a trigger, and what a
-/// device without one cannot do, with the reason.
+/// The Trigger tab, between Device and Analyzers: the stage in words,
+/// a pulse width for the app to find on a device without a trigger, and
+/// what a device without one cannot do, with the reason.
 #[test]
-fn details_from_the_device_tab() {
+fn the_trigger_tab() {
     let mut r = Rig::new(MockOptions::default());
     r.click(Role::Button, "Trigger on D0");
     r.click(Role::Button, "Trigger on D0");
-    r.h.key_press_modifiers(Modifiers::ALT, Key::Num1);
+    r.h.key_press_modifiers(Modifiers::ALT, Key::Num2);
     r.h.run_steps(3);
+    assert_eq!(r.tab().as_deref(), Some("trigger"));
+    let x = |r: &Rig, tab: &str| r.h.get_by_role_and_label(Role::Button, tab).rect().center().x;
+    assert!(x(&r, "Device") < x(&r, "Trigger") && x(&r, "Trigger") < x(&r, "Analyzers"));
     r.h.get_by_label("D0 Falling Edge");
     r.h.get_by_label("The app looks for this trigger in the data.");
-    r.h.get_by_role_and_label(Role::Button, "Trigger Details…").scroll_to_me();
-    r.h.run_steps(3);
-    r.click(Role::Button, "Trigger Details…");
+    // The Device tab no longer has the trigger.
+    r.click(Role::Button, "Device");
+    assert!(r.h.query_by_label("D0 Falling Edge").is_none());
+    assert!(r.h.query_by_label("Capture duration before trigger").is_none());
+    r.click(Role::Button, "Trigger");
     // No trigger in the device: no count, no value range, no stage B.
     for label in ["Trigger on the Nth match", "Value on a group of channels"] {
         assert!(r.h.get_by_role_and_label(Role::CheckBox, label).accesskit_node().is_disabled(), "{label}");
@@ -284,11 +320,30 @@ fn details_from_the_device_tab() {
     // A pulse width is the app's to find.
     r.click(Role::CheckBox, "Pulse width");
     assert_eq!(r.trigger().stages[0].hold, Some(Hold::Between(1e-3, 10e-3)));
-    // In the dialog and behind it on the Device tab.
-    assert_eq!(r.h.query_all_by_label("The app looks for this trigger in the data.").count(), 2);
-    r.click(Role::Button, "Clear Stage");
+    r.h.get_by_label("The app looks for this trigger in the data.");
+    r.click_in_tab(Role::Button, "Clear Stage");
     assert!(r.trigger().is_empty());
-    r.click(Role::Button, "Done");
+    r.h.get_by_label("Set a trigger condition on a channel first.");
+    // Reset, in the tab's header, brings the default back.
+    r.click(Role::Button, "Reset");
+    assert_eq!(r.trigger().get(0, D0), Some(Match::Rising));
+}
+
+/// In another capture mode the tab says the trigger is not used, and
+/// offers Trigger mode.
+#[test]
+fn the_trigger_tab_in_another_mode() {
+    let mut r = Rig::new(MockOptions::default());
+    assert_eq!(r.mode(), CaptureMode::Continuous);
+    r.h.key_press_modifiers(Modifiers::ALT, Key::Num2);
+    r.h.run_steps(3);
+    r.h.get_by_label("The capture mode is Continuous, so this trigger is not used.");
+    assert!(r.h.query_by_label("Set a trigger condition on a channel first.").is_none(), "nothing to complain about");
+    r.click(Role::Button, "Use Trigger Mode");
+    assert_eq!(r.mode(), CaptureMode::Triggered);
+    assert_eq!(r.trigger().get(0, D0), Some(Match::Rising), "something to wait for");
+    assert!(r.h.query_by_role_and_label(Role::Button, "Use Trigger Mode").is_none());
+    r.h.get_by_label("D0 Rising Edge");
 }
 
 /// A driver that lists more stages than it arms says so at the start:

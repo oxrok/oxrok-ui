@@ -242,8 +242,8 @@ pub(crate) struct UiState {
     pub hover_digital: Option<crate::core::ChannelId>,
     /// Inline name editor.
     pub rename: Option<ui::Rename>,
-    /// Trigger Details is open, on this stage.
-    pub trigger_details: Option<usize>,
+    /// The stage whose details the Trigger tab shows.
+    pub trigger_stage: usize,
     /// The Device options row is expanded, and its scope.
     pub device_options_open: bool,
     pub device_options_scope: usize,

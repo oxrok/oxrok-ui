@@ -441,12 +441,14 @@ fn build() -> Vec<Command> {
         cmd("inspector.toggle", "Toggle Inspector", Panels, "show or hide the Inspector")
             .keys(&[k(Key::I).alt(), k(Key::Backslash).cmd()]),
         cmd("panel.device", "Device tab", Panels, "open the Inspector on the Device tab").keys(&[k(Key::Num1).alt()]),
-        cmd("panel.analyzers", "Analyzers tab", Panels, "open the Inspector on the Analyzers tab")
+        cmd("panel.trigger", "Trigger tab", Panels, "open the Inspector on the Trigger tab")
             .keys(&[k(Key::Num2).alt()]),
-        cmd("panel.measurements", "Measurements tab", Panels, "open the Inspector on the Measurements tab")
+        cmd("panel.analyzers", "Analyzers tab", Panels, "open the Inspector on the Analyzers tab")
             .keys(&[k(Key::Num3).alt()]),
-        cmd("panel.markers", "Markers tab", Panels, "open the Inspector on the Markers tab")
+        cmd("panel.measurements", "Measurements tab", Panels, "open the Inspector on the Measurements tab")
             .keys(&[k(Key::Num4).alt()]),
+        cmd("panel.markers", "Markers tab", Panels, "open the Inspector on the Markers tab")
+            .keys(&[k(Key::Num5).alt()]),
         cmd("panel.notes", "Notes", Panels, "show or hide the Notes panel").keys(&[k(Key::N).cmd()]),
         cmd("inspector.detach", "Detach Inspector", Panels, "move the Inspector to a window of its own, or back")
             .keys(&[k(Key::I).alt().shift()]),

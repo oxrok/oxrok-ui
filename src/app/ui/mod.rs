@@ -4,7 +4,6 @@ pub(crate) mod analyzers;
 mod bottom;
 mod bubbles;
 pub(crate) mod buses;
-mod capture_opts;
 pub(crate) mod commands;
 pub(crate) mod datatable;
 mod device_opts;

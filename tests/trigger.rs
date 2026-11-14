@@ -89,7 +89,13 @@ impl Rig {
         self.h.run_steps(3);
     }
 
-    /// Scrolls a control of the Device Settings panel into view and clicks it.
+    /// Opens the Inspector's Trigger tab.
+    fn trigger_tab(&mut self) {
+        self.h.key_press_modifiers(Modifiers::ALT, Key::Num2);
+        self.h.run_steps(3);
+    }
+
+    /// Scrolls a control of the Inspector into view and clicks it.
     fn click_in_panel(&mut self, role: egui::Role, label: &str) {
         self.h.get_by_role_and_label(role, label).scroll_to_me();
         self.h.run_steps(3);
@@ -117,6 +123,9 @@ fn trigger_mode() {
     let s = r.h.state().session().unwrap();
     assert_eq!(s.settings.mode, CaptureMode::Triggered);
     assert_eq!(s.settings.trigger.get(0, D0), Some(Match::Rising), "the lowest enabled channel");
+    // The Device tab has the device's settings; the trigger has its own tab.
+    assert!(r.h.query_by_label("Capture duration after trigger").is_none());
+    r.trigger_tab();
     r.type_time("Capture duration after trigger", "100ms");
     assert!((r.h.state().session().unwrap().settings.trigger.post_trigger_seconds - 0.1).abs() < 1e-12);
     r.record_until_done();
@@ -132,7 +141,7 @@ fn trigger_mode() {
     assert!((RATE / 10..RATE / 10 + RATE / 5).contains(&post), "stopped about 0.1 s after: {post}");
     let s = r.h.state().session().unwrap();
     // The flag: centered after the capture.
-    r.h.get_by_role_and_label(egui::Role::Button, "Trigger");
+    r.h.get_by_role_and_label(egui::Role::Button, "Trigger point");
     let center = s.view.state().center_time();
     assert!((center.secs_since(t)).abs() < 1e-9, "centered on the trigger");
 }
@@ -205,13 +214,13 @@ fn start_failure() {
 fn pre_trigger_duration_on_buffered_devices() {
     let mut r = Rig::new(MockOptions::default());
     pick_mode(&mut r.h, "Trigger");
-    r.h.run_steps(3);
+    r.trigger_tab();
     // A streaming device has it too: the trigger is looked for after it.
     assert!(r.h.query_all_by_label("Capture duration before trigger").next().is_some());
 
     let mut r = Rig::new(MockOptions { buffered: Some(1 << 30), ..MockOptions::default() });
     pick_mode(&mut r.h, "Trigger");
-    r.h.run_steps(3);
+    r.trigger_tab();
     r.type_time("Capture duration before trigger", "20ms");
     r.type_time("Capture duration after trigger", "80ms");
     let t = &r.h.state().session().unwrap().settings.trigger;

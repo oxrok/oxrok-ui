@@ -116,6 +116,11 @@ pub struct MockBackend {
     options: MockOptions,
     /// Plugged in and out by tests.
     devices: parking_lot::Mutex<Vec<DeviceInfo>>,
+    /// USB serial ports plugged in by tests, and whether the firmware
+    /// the driver talks to answers on each.
+    serial_ports: parking_lot::Mutex<Vec<(SerialCandidate, bool)>>,
+    /// Every `(driver, conn)` asked for: what was sent to a port.
+    probed: parking_lot::Mutex<Vec<(String, String)>>,
 }
 
 fn mock_device(serial: &str, model: &str, digital: u16, analog: u16) -> DeviceInfo {
@@ -143,7 +148,12 @@ impl MockBackend {
             mock_device("mock-8", "Mock 8 digital", 8, 0),
             mock_device("mock-16-4", "Mock 16 digital + 4 analog", 16, 4),
         ];
-        Self { options, devices: parking_lot::Mutex::new(devices) }
+        Self {
+            options,
+            devices: parking_lot::Mutex::new(devices),
+            serial_ports: Default::default(),
+            probed: Default::default(),
+        }
     }
 
     /// Tests: a physical (non-demo) mock device appears…
@@ -156,6 +166,31 @@ impl MockBackend {
     /// …or goes.
     pub fn unplug(&self, serial: &str) {
         self.devices.lock().retain(|d| d.serial_or_conn != serial);
+    }
+
+    /// Tests: a board with a USB serial port appears at `port`; `answers`
+    /// says whether the firmware its driver talks to is on it.
+    pub fn plug_serial(&self, port: &str, usb_serial: &str, answers: bool) -> SerialCandidate {
+        let c = SerialCandidate {
+            driver: "raspberrypi-pico".into(),
+            port: port.into(),
+            usb_serial: Some(usb_serial.into()),
+            label: "Raspberry Pi Pico".into(),
+            firmware: "sigrok-pico".into(),
+        };
+        self.serial_ports.lock().push((c.clone(), answers));
+        c
+    }
+
+    /// …or goes, with the device found on it.
+    pub fn unplug_serial(&self, port: &str) {
+        self.serial_ports.lock().retain(|(c, _)| c.port != port);
+        self.devices.lock().retain(|d| d.conn.as_deref() != Some(port));
+    }
+
+    /// Every `(driver, conn)` a scan was asked for, in order.
+    pub fn probed(&self) -> Vec<(String, String)> {
+        self.probed.lock().clone()
     }
 
     pub fn seeded(seed: u64) -> Self {
@@ -187,8 +222,37 @@ impl Backend for MockBackend {
         &[]
     }
 
-    /// The `demo` driver at any connection finds one mock device there.
+    fn serial_candidates(&self) -> Vec<SerialCandidate> {
+        let devices = self.devices.lock();
+        let connected = |port: &str| devices.iter().any(|d| d.conn.as_deref() == Some(port));
+        self.serial_ports.lock().iter().filter(|(c, _)| !connected(&c.port)).map(|(c, _)| c.clone()).collect()
+    }
+
+    /// The `demo` driver at any connection finds one mock device there;
+    /// a serial port's driver finds its board when the firmware answers.
     fn scan_conn(&self, driver: &str, conn: &str) -> Result<Vec<DeviceInfo>, BackendError> {
+        // Found there before: the device has the port.
+        if let Some(d) = self.devices.lock().iter().find(|d| d.conn.as_deref() == Some(conn)) {
+            return Ok(vec![d.clone()]);
+        }
+        self.probed.lock().push((driver.to_owned(), conn.to_owned()));
+        let board = self.serial_ports.lock().iter().find(|(c, _)| c.port == conn && c.driver == driver).cloned();
+        if let Some((c, answers)) = board {
+            if !answers {
+                return Ok(Vec::new());
+            }
+            // Named by the board's serial number, on whatever port.
+            let serial = c.usb_serial.unwrap_or_else(|| conn.to_owned());
+            let info = DeviceInfo {
+                id: DeviceId::new(driver, &serial),
+                driver: driver.to_owned(),
+                conn: Some(conn.to_owned()),
+                is_demo: false,
+                ..mock_device(&serial, &c.label, 8, 0)
+            };
+            self.devices.lock().push(info.clone());
+            return Ok(vec![info]);
+        }
         if driver != "demo" {
             return Ok(Vec::new());
         }

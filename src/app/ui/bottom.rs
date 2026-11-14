@@ -88,6 +88,8 @@ impl LaApp {
         let mut open = None;
         let mut help = false;
         let mut install = None;
+        let mut connect = None;
+        let candidates = self.serial_seen.clone();
         let missing = self.firmware.missing.first().cloned();
         // A warning dot on the button while a device needs firmware.
         if missing.is_some() {
@@ -141,6 +143,24 @@ impl LaApp {
                         });
                     });
                 }
+                // Boards on serial ports, not asked for yet.
+                for c in &candidates {
+                    crate::ui::widgets::menu_separator(ui);
+                    ui.horizontal(|ui| {
+                        ui.set_height(40.0);
+                        ui.add_space(12.0);
+                        let text = crate::l10n::tr("{} on {}").replacen("{}", &c.label, 1).replacen("{}", &c.port, 1);
+                        ui.label(
+                            egui::RichText::new(text).text_style(Text::Prose.style()).color(theme.color(Token::Ink2)),
+                        );
+                        ui.with_layout(Layout::right_to_left(egui::Align::Center), |ui| {
+                            ui.add_space(12.0);
+                            if ui.add(Button::tertiary(crate::l10n::tr("Connect"))).clicked() {
+                                connect = Some(c.clone());
+                            }
+                        });
+                    });
+                }
                 // A device needs firmware.
                 if let Some(m) = &missing {
                     crate::ui::widgets::menu_separator(ui);
@@ -173,6 +193,11 @@ impl LaApp {
         if let Some(file) = install {
             Popup::close_all(ui.ctx());
             self.open_install_firmware(&file);
+        }
+        if let Some(c) = connect {
+            Popup::close_all(ui.ctx());
+            self.toasts.dismiss(&crate::app::serial_toast_id(&c.port));
+            self.connect_serial(c);
         }
         if let Some(d) = open {
             Popup::close_all(ui.ctx());

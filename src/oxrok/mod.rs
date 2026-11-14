@@ -101,6 +101,77 @@ struct Cached {
     info: DeviceInfo,
     slot: Arc<Mutex<Option<Box<dyn OxDevice>>>>,
     defaults: Defaults,
+    /// The connection it was found at, when it was asked for.
+    conn: Option<String>,
+}
+
+/// USB serial devices a driver finds only at their port: the ids, the
+/// driver, what the ids say it is, and the firmware the driver talks to.
+/// The ids of the Pico are those of every Pico SDK program with a USB
+/// serial port, so the port is a candidate, to be probed when asked.
+const SERIAL_IDS: [(u16, u16, &str, &str, &str); 1] =
+    [(0x2E8A, 0x000A, "raspberrypi-pico", "Raspberry Pi Pico", "sigrok-pico")];
+
+/// The ports among `ports` that may hold a known device, without those
+/// in `connected`.
+fn serial_candidates(ports: &[oxrok::serial::UsbPort], connected: &[String]) -> Vec<SerialCandidate> {
+    ports
+        .iter()
+        .filter(|p| !connected.contains(&p.name))
+        .filter_map(|p| {
+            let (_, _, driver, label, firmware) = SERIAL_IDS.iter().find(|id| (id.0, id.1) == (p.vid, p.pid))?;
+            Some(SerialCandidate {
+                driver: (*driver).to_owned(),
+                port: p.name.clone(),
+                usb_serial: usb_identity(ports, &p.name)?.2,
+                label: (*label).to_owned(),
+                firmware: (*firmware).to_owned(),
+            })
+        })
+        .collect()
+}
+
+/// What is plugged in at a USB serial port: the USB ids, and the serial
+/// number where it has one. An empty serial number is none.
+type UsbIdentity = (u16, u16, Option<String>);
+
+fn usb_identity(ports: &[oxrok::serial::UsbPort], port: &str) -> Option<UsbIdentity> {
+    let p = ports.iter().find(|p| p.name == port)?;
+    Some((p.vid, p.pid, p.serial.clone().filter(|s| !s.is_empty())))
+}
+
+/// A connection asked for, scanned again with its driver.
+#[derive(Clone, PartialEq, Eq)]
+struct Conn {
+    driver: String,
+    conn: String,
+    /// What was at the port when the device was found, for a USB serial
+    /// port. The connection lasts as long as that is there: whatever is
+    /// plugged in next is not asked anything.
+    usb: Option<UsbIdentity>,
+}
+
+impl Conn {
+    /// Whether what was found at a USB serial port is still there. Other
+    /// connections (a network address, a USB address) always are.
+    fn still_there(&self, usb_ports: &[oxrok::serial::UsbPort]) -> bool {
+        self.usb.is_none() || usb_identity(usb_ports, &self.conn) == self.usb
+    }
+}
+
+/// A device found at `conn` that names neither itself nor its
+/// connection is named by its port: the USB serial number where the
+/// port has one, so the board is the same device on any port, else the
+/// port itself. Two such devices are then two devices.
+fn name_by_conn(info: &mut DeviceInfo, own_serial: &str, conn: &str, usb_serial: Option<&str>) {
+    if info.conn.is_none() {
+        info.conn = Some(conn.to_owned());
+    }
+    if own_serial.is_empty() || own_serial == "N/A" {
+        let key = usb_serial.unwrap_or(conn);
+        info.id = DeviceId::new(&info.driver, key);
+        info.serial_or_conn = key.to_owned();
+    }
 }
 
 /// A device found by a scan, not open yet.
@@ -110,7 +181,7 @@ pub struct OxrokBackend {
     only: Option<Vec<String>>,
     cache: Arc<Mutex<BTreeMap<DeviceId, Cached>>>,
     /// Connections asked for, scanned again with their driver.
-    conns: Mutex<Vec<(String, String)>>,
+    conns: Mutex<Vec<Conn>>,
 }
 
 impl OxrokBackend {
@@ -137,23 +208,46 @@ impl OxrokBackend {
         self.only.as_ref().is_none_or(|d| d.contains(&id.to_owned()))
     }
 
-    /// Scans one driver, `conn` when given, and replaces its cache entries.
-    /// Returns the devices this scan found.
+    /// Ends the connections whose board went, or whose port another board
+    /// has: the device goes and the port is not asked again. What is
+    /// plugged in next is a candidate, asked about first. An open device
+    /// stays until it is closed, and its connection with it.
+    fn end_gone(&self, cache: &mut BTreeMap<DeviceId, Cached>, usb_ports: &[oxrok::serial::UsbPort]) {
+        self.conns.lock().retain(|asked| {
+            if asked.still_there(usb_ports) {
+                return true;
+            }
+            let at = |c: &Cached| c.info.driver == asked.driver && c.conn.as_deref() == Some(&asked.conn);
+            cache.retain(|_, c| !at(c) || c.slot.lock().is_none());
+            cache.values().any(at)
+        });
+    }
+
+    /// Scans one driver, `conn` when given, and replaces its cache entries
+    /// of that connection. Returns the devices this scan found; the
+    /// driver's error when it was asked for a connection and found none.
     fn scan_driver(
         &self,
         cache: &mut BTreeMap<DeviceId, Cached>,
         driver: &dyn Driver,
         conn: Option<&str>,
-    ) -> Vec<DeviceInfo> {
+    ) -> Result<Vec<DeviceInfo>, oxrok::core::Error> {
         let options = conn.map_or_else(Vec::new, |c| vec![(Key::Conn, Value::Str(c.to_owned()))]);
         log::begin(driver.id());
         let found = driver.scan(&options);
         log::end();
-        let found = found.unwrap_or_default();
+        let (found, error) = match found {
+            Ok(found) => (found, None),
+            Err(e) => (Vec::new(), Some(e)),
+        };
+        let usb_serial = conn.and_then(|c| usb_identity(&oxrok::serial::list_usb_ports(), c)?.2);
         let mut seen = BTreeSet::new();
         let mut out = Vec::new();
         for (n, dev) in found.into_iter().enumerate() {
-            let info = describe(driver.id(), dev.as_ref(), n);
+            let mut info = describe(driver.id(), dev.as_ref(), n);
+            if let Some(c) = conn {
+                name_by_conn(&mut info, &dev.info().serial, c, usb_serial.as_deref());
+            }
             seen.insert(info.id.clone());
             out.push(info.clone());
             let open = cache.get(&info.id).is_some_and(|c| c.slot.lock().is_none());
@@ -162,12 +256,23 @@ impl OxrokBackend {
             }
             cache.insert(
                 info.id.clone(),
-                Cached { info, slot: Arc::new(Mutex::new(Some(dev))), defaults: Arc::new(Mutex::new(None)) },
+                Cached {
+                    info,
+                    slot: Arc::new(Mutex::new(Some(dev))),
+                    defaults: Arc::new(Mutex::new(None)),
+                    conn: conn.map(str::to_owned),
+                },
             );
         }
-        // Devices the driver no longer finds go, unless one is open.
-        cache.retain(|id, c| c.info.driver != driver.id() || seen.contains(id) || c.slot.lock().is_none());
-        out
+        // Devices the driver no longer finds go, unless one is open. Those
+        // found at a connection go with a scan of that connection only.
+        cache.retain(|id, c| {
+            c.info.driver != driver.id() || c.conn.as_deref() != conn || seen.contains(id) || c.slot.lock().is_none()
+        });
+        match error {
+            Some(e) if conn.is_some() && out.is_empty() => Err(e),
+            _ => Ok(out),
+        }
     }
 }
 
@@ -181,15 +286,30 @@ impl Backend for OxrokBackend {
     fn scan_devices(&self) -> Vec<DeviceInfo> {
         let mut cache = self.cache.lock();
         let drivers: Vec<&dyn Driver> = self.registry.drivers().filter(|d| self.wanted(d.id())).collect();
+        let (ports, usb_ports) = if self.conns.lock().is_empty() {
+            (Vec::new(), Vec::new())
+        } else {
+            (oxrok::serial::list_ports(), oxrok::serial::list_usb_ports())
+        };
+        // Before anything is skipped for an open device: only the list of
+        // ports is read.
+        self.end_gone(&mut cache, &usb_ports);
         for driver in drivers {
             if cache.values().any(|c| c.info.driver == driver.id() && c.slot.lock().is_none()) {
                 continue;
             }
-            self.scan_driver(&mut cache, driver, None);
-            let conns: Vec<String> =
-                self.conns.lock().iter().filter(|c| c.0 == driver.id()).map(|c| c.1.clone()).collect();
-            for conn in conns {
-                self.scan_driver(&mut cache, driver, Some(&conn));
+            let _ = self.scan_driver(&mut cache, driver, None);
+            let conns: Vec<Conn> = self.conns.lock().iter().filter(|c| c.driver == driver.id()).cloned().collect();
+            for asked in conns {
+                let conn = asked.conn.clone();
+                // A device found at a serial port stays while the port
+                // is there: asking again would reset it (the Pico's
+                // identify starts with a reset), every few seconds.
+                let held = cache.values().any(|c| c.info.driver == driver.id() && c.conn.as_deref() == Some(&conn));
+                if held && ports.contains(&conn) {
+                    continue;
+                }
+                let _ = self.scan_driver(&mut cache, driver, Some(&conn));
             }
         }
         cache.values().map(|c| c.info.clone()).collect()
@@ -200,18 +320,34 @@ impl Backend for OxrokBackend {
             return Err(BackendError::Unsupported(format!("no driver named {driver}")));
         };
         let mut cache = self.cache.lock();
+        // Found there before: the device has the port, in use or not.
+        let held: Vec<DeviceInfo> = cache
+            .values()
+            .filter(|c| c.info.driver == driver && c.conn.as_deref() == Some(conn))
+            .map(|c| c.info.clone())
+            .collect();
+        if !held.is_empty() {
+            return Ok(held);
+        }
         if cache.values().any(|c| c.info.driver == driver && c.slot.lock().is_none()) {
             return Err(BackendError::Busy);
         }
-        let found = self.scan_driver(&mut cache, d, Some(conn));
+        let found = self.scan_driver(&mut cache, d, Some(conn)).map_err(device_error)?;
         if !found.is_empty() {
-            let key = (driver.to_owned(), conn.to_owned());
+            let usb = usb_identity(&oxrok::serial::list_usb_ports(), conn);
+            let key = Conn { driver: driver.to_owned(), conn: conn.to_owned(), usb };
             let mut conns = self.conns.lock();
-            if !conns.contains(&key) {
-                conns.push(key);
-            }
+            conns.retain(|c| (c.driver.as_str(), c.conn.as_str()) != (driver, conn));
+            conns.push(key);
         }
         Ok(found)
+    }
+
+    fn serial_candidates(&self) -> Vec<SerialCandidate> {
+        let connected: Vec<String> = self.cache.lock().values().filter_map(|c| c.conn.clone()).collect();
+        let mut found = serial_candidates(&oxrok::serial::list_usb_ports(), &connected);
+        found.retain(|c| self.wanted(&c.driver));
+        found
     }
 
     fn library_version(&self) -> Option<String> {
@@ -711,5 +847,157 @@ mod tests {
             matches!(&e, BackendError::Device(m) if m == "firmware file not found: oxrok-test-start.rbf (install it)")
         );
         assert!(log::missing().iter().any(|m| m.file == "oxrok-test-start.rbf" && m.driver.is_empty()));
+    }
+    /// A port with the Pico's USB ids is a candidate, by the ids alone;
+    /// other ports are none, nor one a device was found at.
+    #[test]
+    fn serial_candidates_go_by_the_usb_ids() {
+        let port = |name: &str, vid, pid, serial: Option<&str>| oxrok::serial::UsbPort {
+            name: name.into(),
+            vid,
+            pid,
+            serial: serial.map(str::to_owned),
+            manufacturer: None,
+            product: None,
+        };
+        let ports = [
+            port("/dev/cu.usbmodem11301", 0x2E8A, 0x000A, Some("E6625887D3405136")),
+            // The bench's ESP32: a CP2102 bridge, as any other board has.
+            port("/dev/cu.usbserial-0001", 0x10C4, 0xEA60, Some("0001")),
+            port("/dev/cu.usbmodem2", 0x2E8A, 0x000A, Some("")),
+            // The Pico's vendor with another product.
+            port("/dev/cu.usbmodem3", 0x2E8A, 0x0003, None),
+        ];
+        let found = serial_candidates(&ports, &[]);
+        assert_eq!(found.len(), 2);
+        assert_eq!(
+            (found[0].driver.as_str(), found[0].port.as_str(), found[0].usb_serial.as_deref()),
+            ("raspberrypi-pico", "/dev/cu.usbmodem11301", Some("E6625887D3405136"))
+        );
+        assert_eq!((found[1].port.as_str(), found[1].usb_serial.as_deref()), ("/dev/cu.usbmodem2", None));
+        let connected = ["/dev/cu.usbmodem11301".to_owned()];
+        assert_eq!(serial_candidates(&ports, &connected).len(), 1);
+    }
+
+    /// A connection at a USB serial port lasts while the board found there
+    /// is there. Once it went, or another has its port, the port is not
+    /// asked again: the next board is a candidate.
+    #[test]
+    fn a_serial_connection_ends_with_its_board() {
+        let port = |name: &str, serial: Option<&str>| oxrok::serial::UsbPort {
+            name: name.into(),
+            vid: 0x2E8A,
+            pid: 0x000A,
+            serial: serial.map(str::to_owned),
+            manufacturer: None,
+            product: None,
+        };
+        let at = |ports: &[oxrok::serial::UsbPort], conn: &str| Conn {
+            driver: "raspberrypi-pico".into(),
+            conn: conn.into(),
+            usb: usb_identity(ports, conn),
+        };
+        let ports = [port("/dev/ttyACM0", Some("E6625887D3405136")), port("/dev/ttyACM1", Some(""))];
+        let (a, b) = (at(&ports, "/dev/ttyACM0"), at(&ports, "/dev/ttyACM1"));
+        assert_eq!(a.usb, Some((0x2E8A, 0x000A, Some("E6625887D3405136".into()))));
+        // An empty serial number is none: the device is named by its port.
+        assert_eq!(b.usb, Some((0x2E8A, 0x000A, None)));
+        assert!(a.still_there(&ports) && b.still_there(&ports));
+        // Unplugged.
+        assert!(!a.still_there(&ports[1..]));
+        // Another board on the same port name.
+        assert!(!a.still_there(&[port("/dev/ttyACM0", Some("E66258881B2A7C2D"))]));
+        // Back on its port.
+        assert!(a.still_there(&[port("/dev/ttyACM0", Some("E6625887D3405136"))]));
+        // A network address is no USB serial port: scanned as before.
+        let tcp = at(&ports, "192.168.1.20/5555");
+        assert!(tcp.usb.is_none() && tcp.still_there(&[]));
+    }
+
+    /// A board that went is noticed while another device of its driver is
+    /// open: its port is a candidate again. The open device itself stays
+    /// until it is closed.
+    #[test]
+    fn a_gone_board_ends_beside_an_open_device() {
+        let port = |name: &str, serial: &str| oxrok::serial::UsbPort {
+            name: name.into(),
+            vid: 0x2E8A,
+            pid: 0x000A,
+            serial: Some(serial.into()),
+            manufacturer: None,
+            product: None,
+        };
+        let backend = OxrokBackend::with_drivers(Some(vec!["demo".into()]));
+        // Any device stands for a closed one: the demo's.
+        let closed = || backend.registry.find("demo").unwrap().scan(&[]).unwrap().pop();
+        let add = |ports: &[oxrok::serial::UsbPort], conn: &str, slot: Option<Box<dyn OxDevice>>| {
+            let usb = usb_identity(ports, conn);
+            let id = DeviceId::new("raspberrypi-pico", usb.as_ref().unwrap().2.as_deref().unwrap());
+            let info = DeviceInfo {
+                id: id.clone(),
+                driver: "raspberrypi-pico".into(),
+                vendor: "Raspberry Pi".into(),
+                model: "PICO".into(),
+                version: String::new(),
+                serial_or_conn: id.to_string(),
+                conn: Some(conn.into()),
+                is_demo: false,
+                channels: Vec::new(),
+            };
+            let cached =
+                Cached { info, slot: Arc::new(Mutex::new(slot)), defaults: Arc::default(), conn: Some(conn.into()) };
+            backend.cache.lock().insert(id.clone(), cached);
+            backend.conns.lock().push(Conn { driver: "raspberrypi-pico".into(), conn: conn.into(), usb });
+            id
+        };
+        let held = || backend.cache.lock().values().filter_map(|c| c.conn.clone()).collect::<Vec<_>>();
+        let ports = [port("/dev/ttyACM0", "AAAA"), port("/dev/ttyACM1", "BBBB")];
+        // The board at ACM0 is open, the one at ACM1 is not.
+        let open = add(&ports, "/dev/ttyACM0", None);
+        add(&ports, "/dev/ttyACM1", closed());
+        backend.end_gone(&mut backend.cache.lock(), &ports);
+        assert_eq!(held(), ["/dev/ttyACM0", "/dev/ttyACM1"]);
+
+        // Another board at ACM1: the old one goes, the new is a candidate.
+        let ports = [port("/dev/ttyACM0", "AAAA"), port("/dev/ttyACM1", "CCCC")];
+        backend.end_gone(&mut backend.cache.lock(), &ports);
+        assert_eq!(held(), ["/dev/ttyACM0"]);
+        assert_eq!(backend.conns.lock().len(), 1);
+        let found = serial_candidates(&ports, &held());
+        assert_eq!(found.iter().map(|c| c.port.as_str()).collect::<Vec<_>>(), ["/dev/ttyACM1"]);
+
+        // The open board unplugged: it stays while it is open.
+        backend.end_gone(&mut backend.cache.lock(), &ports[1..]);
+        assert_eq!((held(), backend.conns.lock().len()), (vec!["/dev/ttyACM0".to_owned()], 1));
+        // Closed: gone.
+        *backend.cache.lock()[&open].slot.lock() = closed();
+        backend.end_gone(&mut backend.cache.lock(), &ports[1..]);
+        assert!(held().is_empty() && backend.conns.lock().is_empty());
+    }
+
+    /// A device that names neither itself nor its port is named by the
+    /// port's USB serial number, else by the port: two are two devices.
+    #[test]
+    fn devices_at_a_port_are_told_apart() {
+        let info = || DeviceInfo {
+            id: DeviceId::new("raspberrypi-pico", "N/A"),
+            driver: "raspberrypi-pico".into(),
+            vendor: "Raspberry Pi".into(),
+            model: "PICO".into(),
+            version: String::new(),
+            serial_or_conn: "N/A".into(),
+            conn: None,
+            is_demo: false,
+            channels: Vec::new(),
+        };
+        let (mut a, mut b, mut own) = (info(), info(), info());
+        name_by_conn(&mut a, "N/A", "/dev/cu.usbmodem1", Some("E6625887D3405136"));
+        name_by_conn(&mut b, "", "/dev/cu.usbmodem2", None);
+        assert_eq!(a.id, DeviceId::new("raspberrypi-pico", "E6625887D3405136"));
+        assert_eq!(b.id, DeviceId::new("raspberrypi-pico", "/dev/cu.usbmodem2"));
+        assert_eq!((a.conn.as_deref(), a.serial_or_conn.as_str()), (Some("/dev/cu.usbmodem1"), "E6625887D3405136"));
+        // A device with a serial number of its own keeps it.
+        name_by_conn(&mut own, "SN42", "/dev/cu.usbmodem3", Some("USB"));
+        assert_eq!((own.id.clone(), own.conn.as_deref()), (info().id, Some("/dev/cu.usbmodem3")));
     }
 }

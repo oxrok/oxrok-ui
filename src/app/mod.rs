@@ -82,6 +82,17 @@ pub struct AppOptions {
 }
 
 /// Results from background jobs.
+/// What a device scan brings: the devices, the firmware they miss, and
+/// the serial ports that look like a known board.
+type ScanResult = (Vec<DeviceInfo>, crate::backend::FirmwareStatus, Vec<crate::backend::SerialCandidate>);
+
+/// The toast that asks about the board on a serial port: this and the port.
+const SERIAL_TOAST: &str = "serial-candidate:";
+
+fn serial_toast_id(port: &str) -> String {
+    format!("{SERIAL_TOAST}{port}")
+}
+
 pub(crate) enum AppEvent {
     FolderPicked(Option<PathBuf>),
     ExportDone(Result<(PathBuf, u64), String>),
@@ -89,6 +100,8 @@ pub(crate) enum AppEvent {
     FirmwareInput(Vec<PathBuf>),
     /// A "driver:conn" scan finished.
     Connected(String, Result<Vec<DeviceInfo>, String>),
+    /// The scan of a serial port that looked like a known board finished.
+    SerialConnected(crate::backend::SerialCandidate, Result<Vec<DeviceInfo>, String>),
     /// The CSV lines to write, and where (None: cancelled).
     TableExportFile(Vec<String>, Option<PathBuf>),
     /// Save and load jobs.
@@ -425,7 +438,10 @@ pub struct LaApp {
     pub(crate) dialogs: Arc<dyn FileDialogs>,
     pub(crate) worker: Worker,
     pub(crate) devices: Option<Vec<DeviceInfo>>,
-    scan_rx: Option<Receiver<(Vec<DeviceInfo>, crate::backend::FirmwareStatus)>>,
+    scan_rx: Option<Receiver<ScanResult>>,
+    /// The serial ports that looked like a known board at the last
+    /// scans, each asked about (or connected) once while it is there.
+    serial_seen: Vec<crate::backend::SerialCandidate>,
     /// The firmware status of the last scan.
     pub(crate) firmware: crate::backend::FirmwareStatus,
     /// Scans run on the UI thread (tests).
@@ -549,6 +565,7 @@ impl LaApp {
             worker,
             devices: None,
             scan_rx: None,
+            serial_seen: Vec::new(),
             firmware: Default::default(),
             scan_sync: o.scan_sync,
             last_scan_at: None,
@@ -1675,7 +1692,9 @@ impl LaApp {
         if self.scan_sync {
             let devices = self.backend.scan_devices();
             let firmware = self.backend.firmware_status();
+            let serial = self.backend.serial_candidates();
             self.on_scanned(devices, firmware);
+            self.on_serial_candidates(serial);
             return;
         }
         let (tx, rx) = unbounded();
@@ -1685,7 +1704,7 @@ impl LaApp {
             .name("device-scan".into())
             .spawn(move || {
                 let devices = backend.scan_devices();
-                let _ = tx.send((devices, backend.firmware_status()));
+                let _ = tx.send((devices, backend.firmware_status(), backend.serial_candidates()));
                 ctx.request_repaint();
             })
             .expect("spawn device-scan thread");
@@ -1729,6 +1748,86 @@ impl LaApp {
         }
         for (session, device) in reopen {
             self.worker.send(WorkerCmd::Open { session, device });
+        }
+    }
+
+    /// Serial ports that look like a known board, by their USB ids. A
+    /// board connected before connects again; a new one is asked about
+    /// first, since finding out sends it a reset. Each port once, until
+    /// it is unplugged.
+    fn on_serial_candidates(&mut self, found: Vec<crate::backend::SerialCandidate>) {
+        // A port that went takes its question along. One that connected
+        // is no candidate any more, and is one again when plugged back.
+        let gone: Vec<_> = self.serial_seen.iter().filter(|c| !found.contains(c)).cloned().collect();
+        for c in &gone {
+            self.toasts.dismiss(&serial_toast_id(&c.port));
+        }
+        self.serial_seen.retain(|c| found.contains(c));
+        for c in found {
+            if self.serial_seen.contains(&c) {
+                continue;
+            }
+            self.serial_seen.push(c.clone());
+            let known = c.usb_serial.as_ref().is_some_and(|serial| {
+                self.settings.known_serial_devices.iter().any(|(d, s)| *d == c.driver && s == serial)
+            });
+            if known {
+                self.connect_serial(c);
+            } else {
+                let body = crate::l10n::tr("{} found on {}. Connect it as a logic analyzer?")
+                    .replacen("{}", &c.label, 1)
+                    .replacen("{}", &c.port, 1);
+                self.toast(
+                    Toast::new(ToastKind::Info, body)
+                        .id(serial_toast_id(&c.port))
+                        .persistent()
+                        .action("Not now")
+                        .action("Connect"),
+                );
+            }
+        }
+    }
+
+    /// Asks the driver for the board at a serial candidate's port.
+    fn connect_serial(&mut self, c: crate::backend::SerialCandidate) {
+        if self.scan_sync {
+            let r = self.backend.scan_conn(&c.driver, &c.port).map_err(|e| e.to_string());
+            self.on_serial_connected(c, r);
+            return;
+        }
+        let (backend, tx, ctx) = (self.backend.clone(), self.events_tx.clone(), self.ui.ctx.clone());
+        std::thread::spawn(move || {
+            let r = backend.scan_conn(&c.driver, &c.port).map_err(|e| e.to_string());
+            let _ = tx.send(AppEvent::SerialConnected(c, r));
+            ctx.request_repaint();
+        });
+    }
+
+    /// The board answered, or not: one that did is remembered by its USB
+    /// serial number.
+    fn on_serial_connected(&mut self, c: crate::backend::SerialCandidate, r: Result<Vec<DeviceInfo>, String>) {
+        use crate::l10n::tr;
+        match r {
+            Ok(found) if !found.is_empty() => {
+                if let Some(serial) = &c.usb_serial {
+                    let key = (c.driver.clone(), serial.clone());
+                    if !self.settings.known_serial_devices.contains(&key) {
+                        self.settings.known_serial_devices.push(key);
+                        self.mark_settings_dirty();
+                    }
+                }
+                let text = tr("{} connected on {}").replacen("{}", &c.label, 1).replacen("{}", &c.port, 1);
+                self.toast(Toast::new(ToastKind::Success, text));
+                self.rescan_devices();
+            }
+            Ok(_) => {
+                let text = tr("The {} on {} did not answer. It needs the {} firmware.")
+                    .replacen("{}", &c.label, 1)
+                    .replacen("{}", &c.port, 1)
+                    .replacen("{}", &c.firmware, 1);
+                self.toast(Toast::new(ToastKind::Warning, text));
+            }
+            Err(e) => self.toast(Toast::new(ToastKind::Error, e).heading(tr("Connect failed"))),
         }
     }
 
@@ -1791,10 +1890,11 @@ impl LaApp {
 
     fn drain_events(&mut self) {
         if let Some(rx) = &self.scan_rx
-            && let Ok((devices, firmware)) = rx.try_recv()
+            && let Ok((devices, firmware, serial)) = rx.try_recv()
         {
             self.scan_rx = None;
             self.on_scanned(devices, firmware);
+            self.on_serial_candidates(serial);
         }
         while let Some(ev) = self.worker.try_recv() {
             self.handle_worker_event(ev);
@@ -1833,6 +1933,7 @@ impl LaApp {
                 AppEvent::TableExportFile(lines, Some(path)) => self.write_table_export(lines, path),
                 AppEvent::TableExportFile(_, None) => {}
                 AppEvent::Connected(spec, r) => self.on_connected(spec, r),
+                AppEvent::SerialConnected(c, r) => self.on_serial_connected(c, r),
                 AppEvent::FirmwareInput(p) => self.on_firmware_input(p),
             }
         }
@@ -1949,7 +2050,16 @@ impl eframe::App for LaApp {
         let now = self.now();
         let actions = self.toasts.ui(&ctx, now, BOTTOM_BAR_HEIGHT + 10.0);
         for (id, action) in actions {
-            if id == "analyzer-deleted" && action == "Undo" {
+            if let Some(port) = id.strip_prefix(SERIAL_TOAST) {
+                // "Not now" holds until the board is plugged in again.
+                let candidate = self.serial_seen.iter().find(|c| c.port == port).cloned();
+                self.toasts.dismiss(&id);
+                if action == "Connect"
+                    && let Some(c) = candidate
+                {
+                    self.connect_serial(c);
+                }
+            } else if id == "analyzer-deleted" && action == "Undo" {
                 self.toasts.dismiss(&id);
                 self.undo_delete_analyzer();
             } else if id == "analyzer-trigger-mode" && action == "Undo" {

@@ -1442,6 +1442,15 @@ const ENTRIES: &[(&str, &str, &str)] = &[
      "El disparo se busca después de esta cantidad de datos, para que estén antes del disparo. La captura conserva todo lo grabado desde el inicio que quepa en el búfer de memoria.",
      "触发在这段数据之后才开始查找，以保证触发前有这段数据。采集会保留自开始以来缓冲区能容纳的全部数据。"),
 
+    // ---- Boards on serial ports ----
+    ("{} found on {}. Connect it as a logic analyzer?", "{} encontrado en {}. ¿Conectarlo como analizador lógico?",
+     "发现 {}（位于 {}）。要将其作为逻辑分析仪连接吗？"),
+    ("Not now", "Ahora no", "暂不"),
+    ("{} on {}", "{} en {}", "{}（{}）"),
+    ("{} connected on {}", "{} conectado en {}", "{} 已连接：{}"),
+    ("The {} on {} did not answer. It needs the {} firmware.", "El {} en {} no respondió. Necesita el firmware {}.",
+     "{} 在 {} 上没有应答。它需要 {} 固件。"),
+
     // ---- Paired shortcut rows ----
     ("Previous / Next Edge (hovered row)", "Borde anterior / siguiente (fila señalada)", "上一个/下一个边沿（悬停行）"),
     ("Previous / Next Result (hovered row)", "Resultado anterior / siguiente (fila señalada)", "上一个/下一个结果（悬停行）"),

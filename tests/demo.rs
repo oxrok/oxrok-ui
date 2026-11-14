@@ -96,8 +96,9 @@ fn rescan_is_stable_and_skips_open_drivers() {
 #[test]
 fn scan_at_a_connection() {
     let (backend, _) = demo();
-    let found = backend.scan_conn("demo", "tcp-raw/127.0.0.1/5555").expect("demo scan");
-    assert!(found.is_empty());
+    // The demo takes no connection: its own words, not "nothing found".
+    let refused = backend.scan_conn("demo", "tcp-raw/127.0.0.1/5555");
+    assert!(matches!(&refused, Err(BackendError::Device(e)) if e.contains("conn")), "{refused:?}");
     assert!(matches!(backend.scan_conn("no-such-driver", "x"), Err(BackendError::Unsupported(_))));
     let n = backend.scan_devices().len();
     assert_eq!(backend.scan_devices().len(), n, "stable after a conn scan");

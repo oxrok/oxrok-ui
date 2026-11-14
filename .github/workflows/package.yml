@@ -265,6 +265,9 @@ jobs:
     defaults:
       run:
         shell: msys2 {0}
+    env:
+      SRD_VERSION: 0.5.3
+      SRD_SHA256: 65b4e6ce0519ffec0b1d61ff4beb8243ba68d1e02e3f92f2a34d9ab670e9236f
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -276,7 +279,14 @@ jobs:
           install: >-
             git make curl tar
             mingw-w64-x86_64-rust mingw-w64-x86_64-clang mingw-w64-x86_64-pkgconf
-            mingw-w64-x86_64-libsigrokdecode
+      # MSYS2 has no libsigrokdecode package. Only its decoders are needed,
+      # which are Python files: the release oxrok follows, by its hash.
+      - name: libsigrokdecode's decoders
+        run: |
+          curl -fsSL -o libsigrokdecode.tar.gz "https://github.com/sigrokproject/libsigrokdecode/archive/refs/tags/libsigrokdecode-$SRD_VERSION.tar.gz"
+          echo "$SRD_SHA256  libsigrokdecode.tar.gz" | sha256sum -c -
+          mkdir -p build
+          tar -xzf libsigrokdecode.tar.gz -C build
       - name: Inno Setup
         shell: pwsh
         run: choco install innosetup --no-progress -y
@@ -284,6 +294,7 @@ jobs:
       - name: Build, self-test and installer
         run: |
           export PATH="$PATH:/c/Program Files (x86)/Inno Setup 6"
+          export DECODERS="build/libsigrokdecode-libsigrokdecode-$SRD_VERSION/decoders"
           VERSION=$(sed -n 's/^version = "\(.*\)"/\1/p' Cargo.toml | head -1)
           packaging/windows/build.sh "$VERSION" dist
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2

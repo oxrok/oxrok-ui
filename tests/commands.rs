@@ -137,17 +137,17 @@ fn palette_runs_and_remembers() {
     assert_eq!(r.h.state().settings().history.recent_commands, ["nav.zoom_in"]);
 }
 
-/// `Alt+2` opens the Inspector on the Analyzers tab; again it stays
+/// `Alt+3` opens the Inspector on the Analyzers tab; again it stays
 /// open on that tab (the tab keys open, they don't toggle).
 #[test]
 fn alt_opens_panels() {
     let mut r = Rig::new();
     r.open_demo();
-    r.h.key_press_modifiers(Modifiers::ALT, Key::Num2);
+    r.h.key_press_modifiers(Modifiers::ALT, Key::Num3);
     r.h.run();
     assert!(r.h.state().settings().inspector.open);
     assert_eq!(r.h.state().settings().inspector.tab.as_str(), "analyzers");
-    r.h.key_press_modifiers(Modifiers::ALT, Key::Num2);
+    r.h.key_press_modifiers(Modifiers::ALT, Key::Num3);
     r.h.run();
     assert!(r.h.state().settings().inspector.open, "the tab key opens, it doesn't toggle");
     assert_eq!(r.h.state().settings().inspector.tab.as_str(), "analyzers");
@@ -170,7 +170,7 @@ fn detach_inspector() {
     assert!(s.inspector.open && s.inspector.detached);
     assert!(r.h.query_by_label("Detach Inspector").is_none());
     assert_ne!(r.h.get_by_label("Device").rect(), docked, "the tabs moved out of the left panel");
-    r.h.key_press_modifiers(Modifiers::ALT, Key::Num2);
+    r.h.key_press_modifiers(Modifiers::ALT, Key::Num3);
     r.h.run();
     assert_eq!(r.h.state().settings().inspector.tab.as_str(), "analyzers");
     assert!(r.h.state().settings().inspector.detached, "a tab key keeps it detached");

@@ -548,19 +548,24 @@ impl LaApp {
         if let Some(m) = pick
             && m != mode
         {
-            let s = self.session.as_mut().unwrap();
-            s.settings.mode = m;
-            // Trigger mode starts with something to wait for.
-            if m == CaptureMode::Triggered && s.settings.trigger.is_empty() {
-                let times = s.settings.trigger.clone();
-                s.settings.trigger = crate::core::trigger::DigitalTrigger {
-                    post_trigger_seconds: times.post_trigger_seconds,
-                    pre_trigger_seconds: times.pre_trigger_seconds,
-                    ..crate::core::trigger::DigitalTrigger::reset(&s.settings.enabled)
-                };
-            }
-            self.mark_settings_dirty();
+            self.set_capture_mode(m);
         }
+    }
+
+    /// Picks the capture mode of the active session.
+    pub(crate) fn set_capture_mode(&mut self, m: CaptureMode) {
+        let Some(s) = self.session.as_mut() else { return };
+        s.settings.mode = m;
+        // Trigger mode starts with something to wait for.
+        if m == CaptureMode::Triggered && s.settings.trigger.is_empty() {
+            let times = s.settings.trigger.clone();
+            s.settings.trigger = crate::core::trigger::DigitalTrigger {
+                post_trigger_seconds: times.post_trigger_seconds,
+                pre_trigger_seconds: times.pre_trigger_seconds,
+                ..crate::core::trigger::DigitalTrigger::reset(&s.settings.enabled)
+            };
+        }
+        self.mark_settings_dirty();
     }
 
     /// Horizontal scrollbar.
@@ -797,7 +802,7 @@ impl LaApp {
 }
 
 /// Why an imported file's session can't record.
-fn mode_name(m: CaptureMode) -> &'static str {
+pub(super) fn mode_name(m: CaptureMode) -> &'static str {
     match m {
         CaptureMode::Triggered => tr("Trigger"),
         CaptureMode::Timed => tr("Timed"),

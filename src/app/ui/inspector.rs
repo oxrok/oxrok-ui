@@ -2,6 +2,7 @@
 //! own, with a tab strip over the selected tab's content, and the Device
 //! tab (05).
 
+use super::trigger_ui::TRIGGER_PANEL;
 use super::{hint, section_title};
 use crate::app::LaApp;
 use crate::core::capture::{BUFFER_MB_MIN, BUFFER_MB_STEP, CaptureMode, TIMER_SECONDS_MIN};
@@ -165,24 +166,30 @@ impl LaApp {
     }
 
     /// Whether the active session has a device to show: an
-    /// imported file has none, so no Device tab.
+    /// imported file has none, so no Device tab and no Trigger tab.
     fn has_device_tab(&self) -> bool {
         !self.session.as_ref().is_some_and(|s| s.is_import())
     }
 
     /// The tab shown: the chosen one, or Analyzers in place of a
-    /// hidden Device tab. The choice is kept for the next device session.
+    /// hidden Device or Trigger tab. The choice is kept for the next
+    /// device session.
     pub(crate) fn inspector_tab(&self) -> &str {
         let tab = self.settings.inspector.tab.as_str();
-        if tab == DEVICE_PANEL && !self.has_device_tab() { super::analyzers::ANALYZERS_PANEL } else { tab }
+        if matches!(tab, DEVICE_PANEL | TRIGGER_PANEL) && !self.has_device_tab() {
+            super::analyzers::ANALYZERS_PANEL
+        } else {
+            tab
+        }
     }
 
     /// The Inspector's tabs, in tab order, with their Alt+n number.
     /// Each has an icon, a short label (drawn in the strip) and a full
     /// label (accessibility).
     fn inspector_tabs(&self) -> Vec<(usize, &'static str, &'static str, &'static str, IconFn)> {
-        let all: [(&'static str, &'static str, &'static str, IconFn); 4] = [
+        let all: [(&'static str, &'static str, &'static str, IconFn); 5] = [
             (DEVICE_PANEL, "Device", "Device", icons::device),
+            (TRIGGER_PANEL, "Trigger", "Trigger", icons::trigger_edge),
             (super::analyzers::ANALYZERS_PANEL, "Analyzers", "Analyze", icons::loupe),
             (super::ranges::RANGES_PANEL, "Measurements", "Measure", icons::tape_measure),
             (super::markers::MARKERS_PANEL, "Markers", "Markers", icons::flag),
@@ -190,7 +197,7 @@ impl LaApp {
         let device = self.has_device_tab();
         all.into_iter()
             .enumerate()
-            .filter(|(_, t)| device || t.0 != DEVICE_PANEL)
+            .filter(|(_, t)| device || !matches!(t.0, DEVICE_PANEL | TRIGGER_PANEL))
             .map(|(i, (id, full, short, icon))| (i + 1, id, full, short, icon))
             .collect()
     }
@@ -270,6 +277,7 @@ impl LaApp {
         let theme = ui.la_theme();
         let (title, help) = match tab {
             DEVICE_PANEL => (tr("Device Settings"), None),
+            TRIGGER_PANEL => (tr("Trigger"), None),
             super::analyzers::ANALYZERS_PANEL => (tr("Analyzers"), None),
             super::ranges::RANGES_PANEL => (
                 tr("Measurements"),
@@ -303,6 +311,7 @@ impl LaApp {
                     ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                         ui.add_space(16.0);
                         match tab {
+                            TRIGGER_PANEL => self.trigger_panel_actions(ui),
                             super::markers::MARKERS_PANEL => self.markers_panel_actions(ui),
                             super::analyzers::ANALYZERS_PANEL => self.analyzers_panel_actions(ui),
                             super::ranges::RANGES_PANEL => self.ranges_panel_actions(ui),
@@ -319,6 +328,9 @@ impl LaApp {
             match tab {
                 DEVICE_PANEL => {
                     Frame::new().inner_margin(Margin::symmetric(16, 20)).show(ui, |ui| self.device_panel(ui));
+                }
+                TRIGGER_PANEL => {
+                    Frame::new().inner_margin(Margin::symmetric(16, 20)).show(ui, |ui| self.trigger_panel(ui));
                 }
                 super::markers::MARKERS_PANEL => self.markers_panel(ui),
                 super::analyzers::ANALYZERS_PANEL => {
@@ -408,49 +420,9 @@ impl LaApp {
         let mut rate_idx = rates.iter().position(|&r| r == s.settings.sample_rate).unwrap_or(0);
         let rate_text = rate_label(s.settings.sample_rate);
         let buffer_mb = s.settings.buffer_mb;
-        let mode_idx = match s.settings.mode {
-            CaptureMode::Triggered => 0,
-            CaptureMode::Timed => 1,
-            CaptureMode::Continuous => 2,
-        };
+        let timed = s.settings.mode == CaptureMode::Timed;
         let mut timer = s.settings.timer_seconds;
         let mut rle = s.settings.rle;
-        // 14 on a copy, written back if edited.
-        let mut trig = s.settings.trigger.clone();
-        let digital_items: Vec<super::capture_opts::ChannelItem> = s
-            .rows
-            .iter()
-            .filter(|r| r.channel.kind == ChannelKind::Digital && s.settings.is_enabled(r.channel))
-            .map(|r| (r.channel, format!("{:02}.  {}", r.channel.index, r.display())))
-            .collect();
-        let trigger_info = {
-            let hw = s.caps.as_ref().and_then(|c| c.hw_trigger.as_ref());
-            let name = |c: ChannelId| s.row(c).map_or_else(|| c.short_name(), |r| r.identifier());
-            let shown = crate::app::trigger::stages(hw).max(if trig.stages[1].is_empty() { 1 } else { 2 });
-            super::capture_opts::TriggerInfo {
-                stages: ["A", "B"]
-                    .into_iter()
-                    .zip(&trig.stages)
-                    .take(shown)
-                    .map(|(letter, st)| (letter, super::trigger_ui::stage_summary(st, &name)))
-                    .collect(),
-                status: match crate::app::plan_trigger(&trig, s.caps.as_ref(), 0, s.settings.sample_rate) {
-                    Ok(e) if e.device().is_some() => Ok(tr("The device waits for this trigger.")),
-                    Ok(_) => Ok(tr("The app looks for this trigger in the data.")),
-                    Err(e) => Err(e.text()),
-                },
-            }
-        };
-        let pre_trigger = {
-            use super::capture_opts::PreTrigger;
-            if !s.caps.as_ref().is_some_and(|c| c.supports_continuous) {
-                PreTrigger::DeviceMemory
-            } else if crate::app::waits_in_device(&trig, s.caps.as_ref(), s.settings.sample_rate) {
-                PreTrigger::DeviceTrigger
-            } else {
-                PreTrigger::Everything
-            }
-        };
         let has_rle = s.caps.as_ref().is_some_and(|c| c.rle);
         let thresholds = s.caps.as_ref().and_then(|c| c.thresholds.clone());
         let threshold = s.settings.logic_threshold.clone();
@@ -458,20 +430,13 @@ impl LaApp {
         // The whole area is disabled while capturing.
         let area = ui.add_enabled_ui(!busy, |ui| {
             let mut out = PanelEdits::default();
-            // The mode itself is picked in the toolbar.
-            if mode_idx == 1 {
+            // The mode itself is picked in the toolbar; Trigger mode's
+            // settings are the Trigger tab's, and Continuous has none.
+            if timed {
                 ui.add_space(12.0);
                 hint(ui, tr("Stop recording after"));
                 ui.add_space(6.0);
                 out.timer_changed = time_input(ui, tr("Stop recording after"), &mut timer, TIMER_SECONDS_MIN);
-            }
-            if mode_idx == 0 {
-                ui.add_space(14.0);
-                (out.trigger_changed, out.trigger_details) =
-                    super::capture_opts::trigger_editor(ui, &mut trig, &digital_items, &trigger_info, pre_trigger);
-            }
-            // Continuous has no settings of its own.
-            if mode_idx != 2 {
                 ui.add_space(20.0);
                 divider(ui);
             }
@@ -553,10 +518,6 @@ impl LaApp {
             s.settings.sample_rate = r;
             changed = true;
         }
-        if edits.trigger_changed {
-            s.settings.trigger = trig;
-            changed = true;
-        }
         // The trigger follows the enabled channels; with
         // no digital channel left, Trigger mode falls back.
         let enabled = s.settings.enabled.clone();
@@ -569,10 +530,6 @@ impl LaApp {
             s.settings.mode = if streams { CaptureMode::Continuous } else { CaptureMode::Timed };
             changed = true;
         }
-        if edits.trigger_details {
-            self.ui.trigger_details = Some(0);
-        }
-        let s = self.session.as_mut().unwrap();
         if edits.rle_changed {
             s.settings.rle = rle;
             changed = true;
@@ -604,8 +561,6 @@ struct PanelEdits {
     rate_changed: bool,
     timer_changed: bool,
     rle_changed: bool,
-    trigger_changed: bool,
-    trigger_details: bool,
     threshold: Option<crate::backend::ThresholdChoice>,
     step: i32,
 }

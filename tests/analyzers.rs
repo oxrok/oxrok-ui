@@ -75,7 +75,7 @@ impl Rig {
 
     /// Opens the Analyzers tab of the Inspector.
     fn open_panel(&mut self) {
-        self.h.key_press_modifiers(egui::Modifiers::ALT, egui::Key::Num2);
+        self.h.key_press_modifiers(egui::Modifiers::ALT, egui::Key::Num3);
         self.h.run_steps(3);
     }
 

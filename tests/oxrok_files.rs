@@ -89,6 +89,7 @@ fn imports_and_sr_round_trip() {
     }
     h.run();
     assert!(h.query_by_role_and_label(egui::Role::Button, "Device").is_none(), "no Device tab");
+    assert!(h.query_by_role_and_label(egui::Role::Button, "Trigger").is_none(), "no Trigger tab");
     h.get_by_role_and_label(egui::Role::Button, "Analyzers");
     h.get_by_role_and_label(egui::Role::Button, "Pause analyzers");
     assert_eq!(h.state().settings().inspector.tab, "device", "the Device choice is kept for device sessions");

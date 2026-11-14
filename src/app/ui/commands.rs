@@ -47,7 +47,9 @@ impl LaApp {
                 session()?;
                 need(!s.is_some_and(|s| s.is_import()), "An imported file has no device to record with.")
             }
-            "panel.device" => need(!s.is_some_and(|s| s.is_import()), "An imported file has no device."),
+            "panel.device" | "panel.trigger" => {
+                need(!s.is_some_and(|s| s.is_import()), "An imported file has no device.")
+            }
             "view.wire_status" => {
                 session()?;
                 need(s.is_some_and(|s| !s.is_read_only()), "An opened file has no live pins.")?;
@@ -125,6 +127,7 @@ impl LaApp {
             "inspector.toggle" => Some(self.settings.inspector.open),
             "inspector.detach" => Some(self.settings.inspector.detached),
             "panel.device" => Some(tab(super::inspector::DEVICE_PANEL)),
+            "panel.trigger" => Some(tab(super::trigger_ui::TRIGGER_PANEL)),
             "panel.analyzers" => Some(tab(super::analyzers::ANALYZERS_PANEL)),
             "panel.measurements" => Some(tab(super::ranges::RANGES_PANEL)),
             "panel.markers" => Some(tab(super::markers::MARKERS_PANEL)),
@@ -323,6 +326,7 @@ impl LaApp {
             "analyzer.add" => self.ui.open_picker = true,
             "range.pulse" => self.quick_add_pulse(),
             "panel.device" => self.toggle_panel(super::inspector::DEVICE_PANEL),
+            "panel.trigger" => self.toggle_panel(super::trigger_ui::TRIGGER_PANEL),
             "panel.analyzers" => self.toggle_panel(super::analyzers::ANALYZERS_PANEL),
             "panel.measurements" => self.toggle_panel(super::ranges::RANGES_PANEL),
             "panel.markers" => self.toggle_panel(super::markers::MARKERS_PANEL),

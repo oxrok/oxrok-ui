@@ -340,7 +340,7 @@ fn switching_keeps_decoded_results() {
     r.open_demo();
     r.record(20);
     // Analyzers tab → Async Serial → RX = D1 → Save.
-    r.h.key_press_modifiers(Modifiers::ALT, Key::Num2);
+    r.h.key_press_modifiers(Modifiers::ALT, Key::Num3);
     r.h.run_steps(3);
     r.h.get_by_role_and_label(egui::Role::MenuItem, "Async Serial").click();
     r.h.run_steps(10);

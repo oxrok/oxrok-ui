@@ -313,7 +313,7 @@ fn analyzers_decode_after_new_capture_with_these_settings() {
     let mut r = Rig::new();
     r.record(20);
     // A UART analyzer on D1 (the mock's UART line).
-    r.h.key_press_modifiers(egui::Modifiers::ALT, Key::Num2);
+    r.h.key_press_modifiers(egui::Modifiers::ALT, Key::Num3);
     r.h.run();
     r.h.get_by_role_and_label(egui::Role::MenuItem, "Async Serial").click();
     r.h.run_steps(10);

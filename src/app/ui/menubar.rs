@@ -161,6 +161,7 @@ impl LaApp {
                     cmd("inspector.toggle", "Show/Hide Inspector"),
                     Node::Sep,
                     cmd("panel.device", "Device"),
+                    cmd("panel.trigger", "Trigger"),
                     cmd("panel.analyzers", "Analyzers"),
                     cmd("panel.measurements", "Measurements"),
                     cmd("panel.markers", "Markers"),

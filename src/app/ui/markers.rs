@@ -701,7 +701,8 @@ impl LaApp {
         // heads keep the top.
         let flag = Rect::from_min_size(pos2(x, l.ruler.bottom() - 18.0), vec2(12.0, 14.0));
         let resp = ui.interact(flag, ui.make_persistent_id("trigger_flag"), Sense::click());
-        resp.widget_info(|| WidgetInfo::labeled(Role::Button, true, tr("Trigger")));
+        // Not "Trigger": that is the Inspector's tab.
+        resp.widget_info(|| WidgetInfo::labeled(Role::Button, true, tr("Trigger point")));
         painter.rect_filled(flag, CornerRadius { nw: 0, ne: 4, sw: 0, se: 4 }, TRIGGER_COLOR);
         painter.text(flag.center(), Align2::CENTER_CENTER, "T", FontId::new(10.0, family(SANS_MEDIUM)), Color32::BLACK);
         let resp = resp.on_hover_text(tr("Trigger"));

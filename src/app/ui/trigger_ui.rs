@@ -12,7 +12,7 @@ use crate::core::{ChannelId, ChannelKind};
 use crate::l10n::tr;
 use crate::ui::theme::{Theme, ThemeExt};
 use crate::ui::typography::Text;
-use crate::ui::widgets::{Button, Checkbox, Dropdown, number_input, time_input};
+use crate::ui::widgets::{Button, Checkbox, Dropdown, number_input, time_input, whole_input};
 use crate::ui::{Token, icons};
 use egui::{Align2, Color32, Context, Id, Modal, Painter, Rect, Role, Sense, Ui, WidgetInfo, pos2, vec2};
 
@@ -237,8 +237,10 @@ impl LaApp {
         let (mut cycle, mut details) = (None, None);
         for (ch, ident, k, cell) in cells {
             let stage = &cols.trigger.stages[*k];
-            let sense = if cols.locked.is_some() { Sense::hover() } else { Sense::click() };
-            let resp = ui.interact(cell.intersect(clip), ui.make_persistent_id(("trigger_cell", *ch, *k)), sense);
+            // A locked cell takes the click for its details: those of a
+            // recorded trigger are read there.
+            let resp =
+                ui.interact(cell.intersect(clip), ui.make_persistent_id(("trigger_cell", *ch, *k)), Sense::click());
             let name = cols.name(*k, ident);
             let (icon, state) = glyph(stage, *ch);
             let set = stage.get(*ch).is_some() || in_range(stage, *ch);
@@ -263,12 +265,12 @@ impl LaApp {
             let extras = set && (stage.count.is_some() || stage.hold.is_some() || stage.range.is_some());
             paint_icon(painter, *cell, icon, ink, letter, extras);
             let hint = match (cols.locked, &cols.error) {
-                (Some(why), _) => why.to_owned(),
+                (Some(why), _) => format!("{why}\n{}", tr("Right-click for details.")),
                 (None, Some(e)) if set => e.clone(),
                 (None, _) => tr("Click to change, right-click for details.").to_owned(),
             };
             let resp = resp.on_hover_text(format!("{name}: {state}\n{hint}"));
-            if resp.clicked() {
+            if resp.clicked() && enabled {
                 cycle = Some((*ch, *k));
             }
             if resp.secondary_clicked() {
@@ -569,18 +571,14 @@ fn stage_extras(
         }
         ui.add_space(6.0);
         ui.horizontal(|ui| {
-            let (mut lo, mut hi) = (r.low as f64, r.high as f64);
-            let bounds = Some((0.0, max as f64, 1.0));
             ui.allocate_ui(vec2(130.0, 40.0), |ui| {
-                if number_input(ui, tr("Lowest value"), &mut lo, "", bounds) {
-                    r.low = lo as u64;
+                if whole_input(ui, tr("Lowest value"), &mut r.low, max) {
                     r.high = r.high.max(r.low);
                 }
             });
             ui.label("–");
             ui.allocate_ui(vec2(130.0, 40.0), |ui| {
-                if number_input(ui, tr("Highest value"), &mut hi, "", bounds) {
-                    r.high = hi as u64;
+                if whole_input(ui, tr("Highest value"), &mut r.high, max) {
                     r.low = r.low.min(r.high);
                 }
             });

@@ -114,7 +114,9 @@ pub(crate) fn trigger_spec(
         let n = name(id).ok_or_else(|| format!("no channel {}", id.short_name()))?;
         // These would read as part of the grammar.
         if n.is_empty() || n.contains(['-', ',', '=', ';', '|', '&', '*', '<', '>']) {
-            return Err(format!("the channel name \"{n}\""));
+            // Escaped: the error ends up in the command's `#` comment,
+            // where a line break in the name would end the comment.
+            return Err(format!("the channel name {n:?}"));
         }
         Ok(n)
     };
@@ -405,5 +407,12 @@ mod tests {
         let hw = lower(&DigitalTrigger::on(D(0), Match::Rising), rate, 0).unwrap();
         let renamed = |_| Some("CLK-A".to_owned());
         assert!(trigger_spec(&hw, renamed, position).unwrap_err().contains("CLK-A"));
+        // A line break in a name stays inside the comment that carries
+        // the error.
+        let broken = |_| Some("A\n-B".to_owned());
+        let why = trigger_spec(&hw, broken, position).unwrap_err();
+        assert_eq!(why, r#"the channel name "A\n-B""#);
+        let c = CliCommand { words: vec!["oxrok".into()], comment: Some(format!("trigger not written: {why}")) };
+        assert_eq!(c.one_line().lines().count(), 1);
     }
 }

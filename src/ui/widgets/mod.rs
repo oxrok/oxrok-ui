@@ -18,7 +18,7 @@ pub use menu::{menu_check_item, menu_item, menu_separator, menu_title, popover_f
 pub use segmented::{IconFn, Segment, segmented, segmented_icons};
 pub use select::Dropdown;
 pub use stepper::stepper;
-pub use time_input::{number_input, parse_si, parsed_input, text_input, time_input};
+pub use time_input::{number_input, parse_si, parsed_input, text_input, time_input, whole_input};
 pub use toggles::{BinarySwitch, Checkbox};
 
 use egui::{Color32, Painter, Pos2, Rect, Stroke, pos2};

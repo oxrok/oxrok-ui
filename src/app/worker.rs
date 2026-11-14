@@ -2,7 +2,9 @@
 //! the UI thread. Results come back as events, followed by a
 //! repaint request.
 
-use crate::backend::{AcquisitionPlan, AppliedConfig, Backend, DeviceCaps, DeviceConfig, DeviceId, SampleSink};
+use crate::backend::{
+    AcquisitionPlan, AppliedConfig, Backend, BackendError, DeviceCaps, DeviceConfig, DeviceId, SampleSink,
+};
 use crossbeam_channel::{Receiver, Sender, unbounded};
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -17,9 +19,7 @@ pub enum WorkerCmd {
     Start {
         session: SessionId,
         config: DeviceConfig,
-        /// Made for the settings the device took: its sample rate may
-        /// not be the one asked for, and the plan counts in samples.
-        plan: Box<dyn FnOnce(&AppliedConfig) -> AcquisitionPlan + Send>,
+        plan: Box<PlanFor>,
         sink: Box<dyn SampleSink>,
     },
     Stop {
@@ -39,6 +39,21 @@ pub enum WorkerCmd {
     },
 }
 
+/// The plan of a capture, made for the settings the device took: its
+/// sample rate may not be the one asked for, and the plan counts in
+/// samples. An error fails the start: a trigger that cannot be used at
+/// that rate.
+pub type PlanFor = dyn FnOnce(&AppliedConfig) -> Result<AcquisitionPlan, String> + Send;
+
+/// Why a capture did not start.
+#[derive(Clone, Debug, PartialEq)]
+pub enum StartError {
+    /// The device's own words.
+    Device(String),
+    /// No plan for the settings the device took.
+    Plan(String),
+}
+
 #[derive(Debug)]
 pub enum WorkerEvent {
     Opened {
@@ -47,7 +62,7 @@ pub enum WorkerEvent {
     },
     Started {
         session: SessionId,
-        result: Result<AppliedConfig, String>,
+        result: Result<AppliedConfig, StartError>,
     },
     Stopped {
         session: SessionId,
@@ -123,11 +138,15 @@ impl Worker {
                         }
                         WorkerCmd::Start { session, config, plan, sink } => {
                             let result = match w.device(session) {
-                                None => Err("device not open".to_owned()),
-                                Some(d) => d
-                                    .apply(&config)
-                                    .and_then(|applied| d.start(plan(&applied), sink).map(|()| applied))
-                                    .map_err(|e| e.to_string()),
+                                None => Err(StartError::Device("device not open".to_owned())),
+                                Some(d) => {
+                                    let device = |e: BackendError| StartError::Device(e.to_string());
+                                    d.apply(&config).map_err(device).and_then(|applied| {
+                                        let plan = plan(&applied).map_err(StartError::Plan)?;
+                                        d.start(plan, sink).map_err(device)?;
+                                        Ok(applied)
+                                    })
+                                }
                             };
                             Some(WorkerEvent::Started { session, result })
                         }

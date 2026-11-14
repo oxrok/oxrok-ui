@@ -337,8 +337,8 @@ impl LaApp {
         };
         let read_only = s.is_read_only();
         let locked = read_only || s.state.is_busy() || s.caps.is_none();
-        let hw = s.caps.as_ref().and_then(|c| c.hw_trigger.clone());
-        let hw = hw.as_ref();
+        let caps = s.caps.clone();
+        let hw = caps.as_ref().and_then(|c| c.hw_trigger.as_ref());
         let recorded = s.snapshot.as_ref().and_then(|snap| snap.trigger.clone());
         let mut t = if read_only { recorded.unwrap_or_default() } else { s.settings.trigger.clone() };
         let before = t.clone();
@@ -399,8 +399,7 @@ impl LaApp {
             ui.add_space(16.0);
             // What looks for the trigger, or why nothing can.
             if !read_only && !t.is_empty() {
-                let caps = hw.cloned();
-                match trigger::plan(&t, caps.as_ref(), 0, rate) {
+                match crate::app::plan_trigger(&t, caps.as_ref(), 0, rate) {
                     Ok(e) if e.device().is_some() => note(ui, tr("The device waits for this trigger."), Token::Ink3),
                     Ok(_) => note(ui, tr("The app looks for this trigger in the data."), Token::Ink3),
                     Err(e) => note(ui, &e.text(), Token::Alert),

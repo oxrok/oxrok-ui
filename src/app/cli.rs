@@ -228,12 +228,16 @@ impl Session {
         let device_trigger = crate::app::plan_trigger(&st.trigger, caps, 0, st.sample_rate)
             .ok()
             .filter(|e| lowered.is_some() && e.device().is_some());
-        let triggered = st.mode == CaptureMode::Triggered;
-        let buffered = caps.is_some_and(|c| !c.supports_continuous);
-        let ratio_set = caps.and_then(|c| c.hw_trigger.as_ref()).is_some_and(|t| t.capture_ratio);
-        if triggered && (buffered || (device_trigger.is_some() && ratio_set)) {
-            let (pre, post) = (st.trigger.pre_trigger_seconds, st.trigger.post_trigger_seconds);
-            let ratio = if pre + post > 0.0 { (pre / (pre + post) * 100.0).round() as u32 } else { 0 };
+        // A device that waits for the trigger records one stretch around
+        // it: the app's sample limit, and the share of it before the
+        // trigger. `--time` would be a limit on the whole capture.
+        let waits = st.mode == CaptureMode::Triggered && crate::app::waits_in_device(&st.trigger, caps, st.sample_rate);
+        let (limit, ratio) = crate::app::buffered_trigger_plan(
+            st.trigger.pre_trigger_seconds,
+            st.trigger.post_trigger_seconds,
+            st.sample_rate,
+        );
+        if waits {
             device.push(format!("captureratio={ratio}"));
         }
         let mut groups = Vec::new();
@@ -277,7 +281,11 @@ impl Session {
                         Err(why) => comment = Some(format!("trigger not written: {why}")),
                     }
                 }
-                words.extend(["--time".into(), ms(t.post_trigger_seconds)]);
+                if waits {
+                    words.extend(["--samples".into(), limit.to_string()]);
+                } else {
+                    words.extend(["--time".into(), ms(t.post_trigger_seconds)]);
+                }
             }
         }
         words.extend(["-o".into(), quote(&format!("{}.sr", self.name))]);

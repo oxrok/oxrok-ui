@@ -300,19 +300,73 @@ pub(crate) fn plan_trigger(
     pre_trigger_percent: u8,
     rate: u64,
 ) -> Result<trigger::Evaluator, trigger::TriggerError> {
-    trigger::plan(t, caps.and_then(|c| c.hw_trigger.as_ref()), pre_trigger_percent, rate)
+    let hw = caps.and_then(|c| c.hw_trigger.as_ref());
+    let evaluator = trigger::plan(t, hw, pre_trigger_percent, rate)?;
+    // A streaming device that can't be told how much to keep before its
+    // trigger would start the data at the trigger: the app looks for the
+    // trigger in the stream instead, where it can.
+    let keeps_nothing = caps.is_some_and(|c| c.supports_continuous) && !hw.is_some_and(|hw| hw.capture_ratio);
+    Ok(match evaluator {
+        trigger::Evaluator::Device(_, Some(spec)) if keeps_nothing => trigger::Evaluator::App(spec),
+        other => other,
+    })
 }
 
 /// Whether a Trigger capture waits for the trigger in the device and
 /// keeps only the pre-trigger time before it: a buffered device, or one
-/// whose own trigger takes `t`. Otherwise the device streams and the app
-/// looks for the trigger in the data.
+/// whose own trigger takes `t` and can be told how much to keep before
+/// it, or is the only thing that can look for `t`. Otherwise the device
+/// streams and the app looks for the trigger in the data.
 pub(crate) fn waits_in_device(
     t: &crate::core::trigger::DigitalTrigger,
     caps: Option<&crate::backend::DeviceCaps>,
     rate: u64,
 ) -> bool {
     !caps.is_some_and(|c| c.supports_continuous) || plan_trigger(t, caps, 0, rate).is_ok_and(|e| e.device().is_some())
+}
+
+/// A Trigger capture at the sample `rate` the device runs at: the limit
+/// asked of the device, and what evaluates the trigger.
+pub(crate) fn trigger_capture(
+    t: &crate::core::trigger::DigitalTrigger,
+    caps: Option<&crate::backend::DeviceCaps>,
+    rate: u64,
+) -> (AcquisitionLimit, Option<trigger::Evaluator>) {
+    if waits_in_device(t, caps, rate) {
+        // The device waits for the trigger and records one stretch
+        // around it, sized for the pre- and post-trigger times: with
+        // its own trigger when that takes this one, and always on a
+        // buffered device. The software trigger finds the same
+        // instant in the data.
+        let (limit, pre) = buffered_trigger_plan(t.pre_trigger_seconds, t.post_trigger_seconds, rate);
+        (AcquisitionLimit::Samples(limit), plan_trigger(t, caps, pre, rate).ok())
+    } else {
+        // Otherwise a streaming device records continuously while
+        // the software trigger scans.
+        (AcquisitionLimit::Continuous, plan_trigger(t, caps, 0, rate).ok())
+    }
+}
+
+/// What a capture with settings `st` asks of the device, at the sample
+/// `rate` the device runs at.
+pub(crate) fn acquisition_plan(
+    st: &crate::core::capture::CaptureSettings,
+    caps: Option<&crate::backend::DeviceCaps>,
+    rle: bool,
+    rate: u64,
+) -> AcquisitionPlan {
+    let mut trigger = None;
+    let limit = match st.mode {
+        // Timed mode: a sample limit of ⌈t × rate⌉.
+        CaptureMode::Timed => AcquisitionLimit::Samples((st.timer_seconds * rate as f64).ceil() as u64),
+        CaptureMode::Triggered => {
+            let (limit, evaluator) = trigger_capture(&st.trigger, caps, rate);
+            trigger = evaluator.and_then(|e| e.device().cloned());
+            limit
+        }
+        CaptureMode::Continuous => AcquisitionLimit::Continuous,
+    };
+    AcquisitionPlan { rle, trigger, ..AcquisitionPlan::new(limit) }
 }
 
 /// About what `analog` channels take in memory for `seconds` at `rate`,
@@ -745,32 +799,7 @@ impl LaApp {
         }
         // Compression when the device has it and it's on.
         let rle = s.caps.as_ref().is_some_and(|c| c.rle) && s.settings.rle;
-        // Timed mode: a sample limit of ⌈t × rate⌉.
-        let rate = s.settings.sample_rate;
         let trig = s.settings.trigger.clone();
-        let mut hw_trigger = None;
-        let mut evaluator = None;
-        let limit = match s.settings.mode {
-            CaptureMode::Timed => AcquisitionLimit::Samples((s.settings.timer_seconds * rate as f64).ceil() as u64),
-            // The device waits for the trigger and records one stretch
-            // around it, sized for the pre- and post-trigger times: with
-            // its own trigger when that takes this one, and always on a
-            // buffered device. The software trigger finds the same
-            // instant in the data.
-            CaptureMode::Triggered if waits_in_device(&trig, s.caps.as_ref(), rate) => {
-                let (limit, pre) = buffered_trigger_plan(trig.pre_trigger_seconds, trig.post_trigger_seconds, rate);
-                evaluator = plan_trigger(&trig, s.caps.as_ref(), pre, rate).ok();
-                hw_trigger = evaluator.as_ref().and_then(|e| e.device().cloned());
-                AcquisitionLimit::Samples(limit)
-            }
-            // Otherwise a streaming device records continuously while
-            // the software trigger scans.
-            CaptureMode::Triggered => {
-                evaluator = plan_trigger(&trig, s.caps.as_ref(), 0, rate).ok();
-                AcquisitionLimit::Continuous
-            }
-            CaptureMode::Continuous => AcquisitionLimit::Continuous,
-        };
         // Session reset: drop the data, keep settings, rows and zoom.
         let data = SharedCapture::default();
         let repaint_ctx = ctx.clone();
@@ -781,16 +810,20 @@ impl LaApp {
             Box::new(move || repaint_ctx.request_repaint()),
         )
         .pre_trigger(if triggered { trig.pre_trigger_seconds } else { 0.0 });
-        data.write().hw_trigger_expected = hw_trigger.is_some();
-        // Where the scanner cannot look for the trigger, the position
-        // is the device's.
-        s.scanner = evaluator.as_ref().and_then(|e| e.scan()).cloned().map(crate::engine::trigger::TriggerScanner::new);
-        // Where the app looks for the trigger itself, it looks after the
-        // time to keep before it: the first match on a running signal
-        // is in the first samples, with nothing before them.
-        if let (Some(scanner), Some(trigger::Evaluator::App(_))) = (s.scanner.as_mut(), evaluator.as_ref()) {
-            scanner.skip_to(trigger::pre_trigger_samples(&trig, rate));
-        }
+        // The plan counts in samples, so the worker makes it once the
+        // device has the settings, for the sample rate it took: a device
+        // may round the one asked for. So does `scan_trigger`, for what
+        // looks for the trigger in the data.
+        let plan = {
+            let (st, caps, data) = (s.settings.clone(), s.caps.clone(), data.clone());
+            move |applied: &AppliedConfig| {
+                let plan = acquisition_plan(&st, caps.as_ref(), rle, applied.sample_rate);
+                data.write().hw_trigger_expected = plan.trigger.is_some();
+                plan
+            }
+        };
+        s.scanner = None;
+        s.scanner_planned = false;
         s.capture = Some(data.clone());
         if next_round {
             // The decoders follow this round once it is shown.
@@ -829,7 +862,7 @@ impl LaApp {
         self.worker.send(WorkerCmd::Start {
             session: s.id,
             config: s.device_config(enabled),
-            plan: AcquisitionPlan { rle, trigger: hw_trigger, ..AcquisitionPlan::new(limit) },
+            plan: Box::new(plan),
             sink: Box::new(sink),
         });
     }
@@ -1267,10 +1300,27 @@ impl LaApp {
         let mut scanner = s.scanner.take();
         let (found, progress, rate, end, known) = {
             let d = cap.read();
-            let (Some(rate), Some((_, end))) = (d.sample_rate(), d.sample_range()) else {
+            let (Some(rate), Some((begin, end))) = (d.sample_rate(), d.sample_range()) else {
                 s.scanner = scanner;
                 return false;
             };
+            // What the scanner looks for is in samples at the rate of the
+            // data, which the device may have rounded.
+            if !s.scanner_planned
+                && let Some(trig) = s.snapshot.as_ref().and_then(|x| x.trigger.as_ref())
+            {
+                let evaluator = trigger_capture(trig, s.caps.as_ref(), rate).1;
+                scanner =
+                    evaluator.as_ref().and_then(|e| e.scan()).cloned().map(crate::engine::trigger::TriggerScanner::new);
+                // Where the app looks for the trigger itself, it looks
+                // after the time to keep before it: the first match on a
+                // running signal is in the first samples, with nothing
+                // before them.
+                if let (Some(scanner), Some(trigger::Evaluator::App(_))) = (scanner.as_mut(), evaluator.as_ref()) {
+                    scanner.skip_to(trigger::pre_trigger_samples(trig, rate));
+                }
+                s.scanner_planned = true;
+            }
             // With the device's trigger, the data before it is
             // pre-trigger data and may match too. Wait for its position,
             // then look for the exact edge just around it (the software
@@ -1279,26 +1329,7 @@ impl LaApp {
                 (Some(_), ..) => None,
                 (None, true, None, _) if d.end.is_none() => None,
                 (None, true, Some(h), Some(scanner)) => {
-                    const WINDOW: u64 = 64;
-                    if scanner.progress() < h.saturating_sub(WINDOW) {
-                        scanner.skip_to(h.saturating_sub(WINDOW));
-                    }
-                    let stop = end.min(h + WINDOW);
-                    if stop >= h + WINDOW || d.end.is_some() {
-                        // The data before the trigger may match too: of
-                        // the matches around, the one nearest the
-                        // device's position.
-                        let mut nearest: Option<u64> = None;
-                        while let Some(t) = scanner.scan(|c| d.channel(c), stop) {
-                            if nearest.is_none_or(|n| t.abs_diff(h) < n.abs_diff(h)) {
-                                nearest = Some(t);
-                            }
-                        }
-                        Some(nearest.unwrap_or(h.min(end.saturating_sub(1))))
-                    } else {
-                        // Not all of the window yet.
-                        None
-                    }
+                    scanner.scan_near(|c| d.channel(c), h, (begin, end), d.end.is_some())
                 }
                 // Stages, counts and the like: only the device knows
                 // which match was the trigger. Its sample comes with the
@@ -2005,5 +2036,86 @@ mod tests {
             assert!((limit - pre_got) as f64 >= (post * rate as f64).ceil(), "{pre} {post}");
             assert!(pct <= 99);
         }
+    }
+
+    /// The plan is for the rate the device took: its sample counts are
+    /// times at that rate.
+    #[test]
+    fn the_plan_follows_the_rate() {
+        use super::{acquisition_plan, trigger, trigger_capture};
+        use crate::backend::{
+            AcquisitionLimit, DeviceCaps, HwTrigger, HwTriggerCaps, RateCoupling, Rates, TriggerMatch,
+        };
+        use crate::core::ChannelId;
+        use crate::core::capture::{CaptureMode, CaptureSettings};
+        use crate::core::trigger::{DigitalTrigger, StageCount};
+        let d0 = ChannelId::digital(0);
+        let caps = DeviceCaps {
+            samplerates: Rates::Range { min: 1, max: 100_000_000, step: 1 },
+            rates_coupled: RateCoupling::Shared,
+            max_limit_samples: None,
+            supports_continuous: true,
+            supports_limit_msec: false,
+            rle: false,
+            thresholds: None,
+            threshold: None,
+            options: Vec::new(),
+            hw_trigger: Some(HwTriggerCaps {
+                matches: vec![TriggerMatch::Rising, TriggerMatch::Falling],
+                capture_ratio: true,
+                pulse: true,
+                duration: true,
+                count: true,
+                ..HwTriggerCaps::default()
+            }),
+            analog_ranges: Vec::new(),
+            supports_state_read: false,
+        };
+        let timed = CaptureSettings { mode: CaptureMode::Timed, timer_seconds: 0.5, ..CaptureSettings::default() };
+        let limit = |rate| acquisition_plan(&timed, Some(&caps), false, rate).limit;
+        assert_eq!(limit(3_000_000), AcquisitionLimit::Samples(1_500_000));
+        // An OLS asked for 3 MS/s: 100 MHz / 34.
+        assert_eq!(limit(2_941_176), AcquisitionLimit::Samples(1_470_588));
+
+        let mut trigger = DigitalTrigger::pulse(d0, true, 1e-3, 2e-3);
+        trigger.pre_trigger_seconds = 0.1;
+        trigger.post_trigger_seconds = 0.9;
+        let settings =
+            |trigger| CaptureSettings { mode: CaptureMode::Triggered, trigger, ..CaptureSettings::default() };
+        let waits = settings(trigger.clone());
+        let plan = |rate| acquisition_plan(&waits, Some(&caps), false, rate);
+        let hw = |min, max| Some(HwTrigger::one_stage(vec![(d0, TriggerMatch::Falling)], 10).pulse(min, max));
+        assert_eq!(
+            (plan(1_000_000).limit, plan(1_000_000).trigger),
+            (AcquisitionLimit::Samples(1_000_000), hw(1_000, 2_000))
+        );
+        assert_eq!((plan(800_000).limit, plan(800_000).trigger), (AcquisitionLimit::Samples(800_000), hw(800, 1_600)));
+        // What the app looks for in the data, in the same samples.
+        let scan = |rate| trigger_capture(&trigger, Some(&caps), rate).1.and_then(|e| e.scan().cloned()).unwrap();
+        assert_eq!((scan(1_000_000).pulse, scan(800_000).pulse), (Some((1_000, 2_000)), Some((800, 1_600))));
+
+        // Without the device's trigger it streams, and the app scans. So
+        // with one that can't be told how much to keep before it.
+        let streams = (AcquisitionLimit::Continuous, None);
+        let mut other = caps.clone();
+        other.hw_trigger.as_mut().unwrap().capture_ratio = false;
+        let plan = acquisition_plan(&waits, Some(&other), false, 1_000_000);
+        assert_eq!((plan.limit, plan.trigger), streams);
+        assert!(matches!(trigger_capture(&trigger, Some(&other), 1_000_000).1, Some(trigger::Evaluator::App(_))));
+        // A trigger only the device can look for stays the device's.
+        let mut third = trigger.clone();
+        third.stages[0].hold = None;
+        third.stages[0].count = Some(StageCount { n: 3, consecutive: false });
+        let plan = acquisition_plan(&settings(third), Some(&other), false, 1_000_000);
+        assert_eq!(plan.limit, AcquisitionLimit::Samples(1_000_000));
+        assert_eq!(plan.trigger.map(|t| t.stages[0].count), Some(Some((3, false))));
+
+        other.hw_trigger = None;
+        let plan = acquisition_plan(&waits, Some(&other), false, 1_000_000);
+        assert_eq!((plan.limit, plan.trigger), streams);
+        // A buffered device waits in any case, with the trigger it has.
+        let buffered = DeviceCaps { supports_continuous: false, ..other };
+        let plan = acquisition_plan(&waits, Some(&buffered), false, 1_000_000);
+        assert_eq!((plan.limit, plan.trigger), (AcquisitionLimit::Samples(1_000_000), None));
     }
 }

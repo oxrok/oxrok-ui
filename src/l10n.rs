@@ -1362,6 +1362,7 @@ const ENTRIES: &[(&str, &str, &str)] = &[
     ("Trigger stage {} details", "Detalles de la etapa {} del disparo", "触发阶段 {} 详情"),
     ("Click to change, right-click for details.", "Clic para cambiar, clic derecho para ver los detalles.",
      "单击更改，右键单击查看详情。"),
+    ("Right-click for details.", "Clic derecho para ver los detalles.", "右键单击查看详情。"),
     ("The trigger this capture was recorded with.", "El disparo con el que se grabó esta captura.",
      "此次采集所用的触发。"),
     ("Stop the capture to change the trigger.", "Detén la captura para cambiar el disparo.", "停止采集后才能更改触发。"),

@@ -9,7 +9,7 @@ use oxrok_ui::app::{AppOptions, LaApp};
 use oxrok_ui::backend::{MockBackend, MockOptions, Streaming};
 use oxrok_ui::core::capture::{CaptureMode, CaptureState};
 use oxrok_ui::core::markers::TimeOrigin;
-use oxrok_ui::core::trigger::Match;
+use oxrok_ui::core::trigger::{DigitalTrigger, Match};
 use oxrok_ui::core::{CaptureTime, ChannelId, ManualClock};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
@@ -206,6 +206,47 @@ fn start_failure() {
     r.h.key_press(Key::Space);
     r.until(|a| a.toasts().iter().any(|t| t.heading.as_deref() == Some("Could not begin the capture.")));
     assert_eq!(r.state(), CaptureState::Empty);
+}
+
+/// A device may round the sample rate, and a pulse width may have no
+/// whole sample in it at the rate it took: the capture does not begin
+/// without its trigger, and the reason has the rate.
+#[test]
+fn a_trigger_the_applied_rate_cannot_take() {
+    use oxrok_ui::backend::{HwTriggerCaps, TriggerMatch};
+    // Two stages, which only the device's own trigger takes.
+    let hw_trigger = Some(HwTriggerCaps {
+        matches: vec![TriggerMatch::Rising, TriggerMatch::Falling],
+        capture_ratio: true,
+        pulse: true,
+        duration: true,
+        holdoff: true,
+        ..HwTriggerCaps::default()
+    });
+    let mut r = Rig::new(MockOptions { hw_trigger, ..MockOptions::default() });
+    pick_mode(&mut r.h, "Trigger");
+    r.h.run_steps(3);
+    {
+        let s = r.h.state_mut().session_mut().unwrap();
+        // One sample at 3 MS/s, which the mock has not: it takes 2 or
+        // 4 MS/s, and a third of a microsecond is no sample of either.
+        s.settings.sample_rate = 3_000_000;
+        let mut t = DigitalTrigger::pulse(D0, true, 1.0 / 3e6, 1.0 / 3e6);
+        let [b, _] = DigitalTrigger::on(ChannelId::digital(1), Match::Rising).stages;
+        t.stages[1] = b;
+        s.settings.trigger = t;
+    }
+    r.h.run_steps(2);
+    assert_eq!(r.h.state().capture_blocked(), None, "fine at the rate asked for");
+    r.h.key_press(Key::Space);
+    r.until(|a| a.toasts().iter().any(|t| t.heading.as_deref() == Some("Could not begin the capture.")));
+    assert_eq!(r.state(), CaptureState::Empty);
+    let toasts = r.h.state().toasts();
+    let t = toasts.iter().find(|t| t.heading.as_deref() == Some("Could not begin the capture.")).unwrap();
+    assert!(t.body.starts_with("No whole number of samples fits the duration at this sample rate."), "{}", t.body);
+    assert!(t.body.contains("Sample rate adjusted to"), "{}", t.body);
+    // Not the hints for what a device refuses.
+    assert_eq!(t.body.lines().count(), 2, "{}", t.body);
 }
 
 /// "Capture duration before trigger" is kept before the trigger on a

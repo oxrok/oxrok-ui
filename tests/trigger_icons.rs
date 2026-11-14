@@ -193,7 +193,8 @@ fn a_click_cycles_the_condition() {
     assert_eq!(t % (RATE / 1000), 0, "a rising edge of the 1 kHz square");
 }
 
-/// While a capture runs the icons show the trigger and take no click.
+/// While a capture runs the icons show the trigger and take no click,
+/// but the one for its details, which can be read and not changed.
 #[test]
 fn locked_while_recording() {
     let mut r = Rig::new(MockOptions::default());
@@ -204,6 +205,11 @@ fn locked_while_recording() {
     assert!(r.h.get_by_role_and_label(Role::Button, "Trigger on D1").accesskit_node().is_disabled());
     let before = r.trigger();
     r.click(Role::Button, "Trigger on D1");
+    assert_eq!(r.trigger(), before);
+    r.right_click("Trigger on D1");
+    assert_eq!(r.tab().as_deref(), Some("trigger"));
+    assert!(r.h.get_by_role_and_label(Role::Button, "Clear Stage").accesskit_node().is_disabled());
+    assert!(r.h.get_by_role_and_label(Role::Button, "Reset").accesskit_node().is_disabled());
     assert_eq!(r.trigger(), before);
     r.h.key_press(Key::Space);
     r.until(|a| !a.session().unwrap().state.is_busy());

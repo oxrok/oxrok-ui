@@ -101,6 +101,11 @@ make run                           # the app on oxrok (release; PROFILE=dev for 
   ad-hoc signed `Oxrok.app` and a `.dmg` to `dist/`.
   - It carries the Python decoders and the open firmware (oxrok and
     RustPython are in the binary).
+  - The `.dmg` opens on the app beside a link to Applications, to drag
+    it there. Finder lays that window out, so `make bundle` needs a
+    logged-in desktop. Its background is
+    `packaging/macos/dmg/background.svg` (`make dmg-background` renders
+    it).
   - It ends with the app's `--self-test`.
   - For a release, `SIGN_IDENTITY` (a Developer ID Application identity)
     signs it with the hardened runtime, and `NOTARY_PROFILE` (a keychain

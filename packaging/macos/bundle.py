@@ -4,7 +4,8 @@
 oxrok and RustPython are in the binary, so there are no libraries to copy.
 Resources: the decoders of a libsigrokdecode installation (oxrok runs them
 on RustPython) and vendor/ firmware (make firmware-deps). Signs and makes
-a .dmg.
+a .dmg, whose window has the app beside a link to /Applications on
+dmg/background.svg.
 
     bundle.py --bin target/release/oxrok-ui --version 0.11.0 --out dist [--vendor vendor] [--cli target/oxrok-cli/bin/oxrok]
               [--sign <identity> [--notary-profile <name> | --notary-key AuthKey.p8 --notary-key-id <id> --notary-issuer <uuid>]]
@@ -23,6 +24,9 @@ store-credentials`) or the three --notary-key options (an App Store Connect
 API key), the app and then the .dmg go to the notary service and get the
 ticket stapled, so both open on a Mac that is offline.
 
+The .dmg's window: Finder lays it out (osascript), which needs a logged-in
+desktop and, the first time, the permission to control Finder.
+
 The work is in two stages, for a build that keeps the signing keys away
 from the code it builds (.github/workflows/package.yml):
 
@@ -36,6 +40,8 @@ import re
 import shutil
 import subprocess
 import sys
+import tempfile
+import time
 from pathlib import Path
 
 # The app's name, as it calls itself in its menus and windows.
@@ -43,6 +49,52 @@ APP_NAME = "Oxrok UI"
 # The bundle in dist/, in the .dmg and in /Applications.
 BUNDLE = "Oxrok.app"
 BUNDLE_ID = "org.oxrok.ui"
+
+# The .dmg's window, in points: its content, and the middles of the two
+# icons on dmg/background.svg.
+DMG_ART = Path(__file__).resolve().parent / "dmg"
+DMG_WINDOW = (660, 400)
+DMG_TITLE_BAR = 28
+DMG_ICON = 128
+DMG_APP_AT = (170, 165)
+DMG_APPLICATIONS_AT = (490, 165)
+
+# Finder writes what it is told here to the volume's .DS_Store.
+DMG_LAYOUT = """\
+on run argv
+	set volumeName to item 1 of argv
+	tell application "Finder"
+		tell disk volumeName
+			open
+			tell container window
+				set current view to icon view
+				set toolbar visible to false
+				set statusbar visible to false
+				set the bounds to {%(left)d, %(top)d, %(right)d, %(bottom)d}
+			end tell
+			set viewOptions to the icon view options of container window
+			tell viewOptions
+				set arrangement to not arranged
+				set icon size to %(icon)d
+				set text size to 13
+			end tell
+			set background picture of viewOptions to file ".background:background.tiff"
+			set position of item "%(bundle)s" to {%(app_x)d, %(app_y)d}
+			set position of item "Applications" to {%(applications_x)d, %(applications_y)d}
+			close
+			open
+			update without registering applications
+			delay 2
+			tell container window
+				set statusbar visible to false
+				set the bounds to {%(left)d, %(top)d, %(right)d, %(bottom)d}
+			end tell
+			delay 2
+			close
+		end tell
+	end tell
+end run
+"""
 
 
 def run(*cmd, check=True):
@@ -146,6 +198,92 @@ def app_version(app):
     return m.group(1)
 
 
+def finder_layout(volume, mount):
+    """Has Finder lay out the mounted volume's window."""
+    left, top = 200, 120
+    script = DMG_LAYOUT % {
+        "left": left, "top": top, "right": left + DMG_WINDOW[0], "bottom": top + DMG_TITLE_BAR + DMG_WINDOW[1],
+        "icon": DMG_ICON, "bundle": BUNDLE,
+        "app_x": DMG_APP_AT[0], "app_y": DMG_APP_AT[1],
+        "applications_x": DMG_APPLICATIONS_AT[0], "applications_y": DMG_APPLICATIONS_AT[1],
+    }
+    # Finder sometimes lets an Apple event time out, on a CI runner above all.
+    said = ""
+    for _ in range(3):
+        try:
+            r = subprocess.run(["osascript", "-", volume], input=script, capture_output=True, text=True, timeout=300)
+        except subprocess.TimeoutExpired:
+            said = "no answer in 5 minutes"
+            continue
+        if r.returncode == 0:
+            break
+        said = r.stderr.strip()
+        print(f"  ! Finder: {said}; trying again", file=sys.stderr)
+        time.sleep(3)
+    else:
+        sys.exit(f"Finder did not lay out the .dmg's window: {said}\n"
+                 "(it needs a logged-in desktop, and the permission to control Finder: "
+                 "System Settings, Privacy & Security, Automation)")
+    # Finder writes the layout a little after it is told.
+    store = mount / ".DS_Store"
+    for _ in range(30):
+        if store.is_file() and store.stat().st_size:
+            break
+        time.sleep(1)
+    else:
+        sys.exit(f"Finder did not write the .dmg's window layout ({store})")
+    run("sync")
+    time.sleep(2)
+
+
+def disk_image(app, dmg):
+    """The .dmg: the app beside a link to /Applications, in a window with dmg/background.svg behind."""
+    art = [DMG_ART / "background.png", DMG_ART / "background@2x.png"]
+    for f in art:
+        if not f.is_file():
+            sys.exit(f"{f}: the .dmg's background is not there")
+    work = Path(tempfile.mkdtemp(prefix="dmg-", dir=dmg.parent))
+    try:
+        stage = work / "stage"
+        (stage / ".background").mkdir(parents=True)
+        # One TIFF with both resolutions: Finder picks by the display.
+        run("tiffutil", "-cathidpicheck", *map(str, art), "-out", str(stage / ".background/background.tiff"))
+        run("ditto", str(app), str(stage / BUNDLE))
+        os.symlink("/Applications", stage / "Applications")
+
+        # Read-write first, with room for what Finder writes.
+        megabytes = int(run("du", "-sk", str(stage)).split()[0]) // 1024
+        image = work / "layout.dmg"
+        run("hdiutil", "create", "-volname", APP_NAME, "-srcfolder", str(stage), "-fs", "HFS+", "-format", "UDRW",
+            "-size", f"{megabytes + megabytes // 8 + 32}m", str(image))
+        device = mount = None
+        for line in run("hdiutil", "attach", "-readwrite", "-noverify", "-noautoopen", str(image)).splitlines():
+            fields = [f.strip() for f in line.split("\t")]
+            device = device or fields[0]
+            if fields[-1].startswith("/Volumes/"):
+                mount = Path(fields[-1])
+        if not (device and mount):
+            sys.exit(f"{image}: did not mount")
+        try:
+            # Finder knows a volume by its name, and a second one of the
+            # name is mounted as "<name> 1".
+            if mount.name != APP_NAME:
+                sys.exit(f"a volume named {APP_NAME} is mounted already: eject it first")
+            finder_layout(APP_NAME, mount)
+            shutil.rmtree(mount / ".fseventsd", ignore_errors=True)
+        finally:
+            for attempt in range(5):
+                if subprocess.run(["hdiutil", "detach", device, *(["-force"] if attempt == 4 else [])],
+                                  capture_output=True).returncode == 0:
+                    break
+                time.sleep(2)
+            else:
+                sys.exit(f"{device}: could not eject the .dmg being laid out")
+        run("hdiutil", "convert", str(image), "-format", "UDZO", "-imagekey", "zlib-level=9", "-o", str(dmg))
+    finally:
+        shutil.rmtree(work, ignore_errors=True)
+
+
 def package(a, app):
     """Signs the app, has it notarized, and makes the .dmg of it."""
     creds = []
@@ -167,7 +305,7 @@ def package(a, app):
     dmg = a.out / f"Oxrok-UI-{a.version or app_version(app)}-macos-{os.uname().machine}.dmg"
     if dmg.exists():
         dmg.unlink()
-    run("hdiutil", "create", "-volname", APP_NAME, "-srcfolder", str(app), "-ov", "-format", "UDZO", str(dmg))
+    disk_image(app, dmg)
     if a.sign:
         run("codesign", "--force", "--sign", a.sign, "--timestamp", str(dmg))
     if creds:

@@ -424,7 +424,16 @@ impl LaApp {
             .map(|r| (r.channel, format!("{:02}.  {}", r.channel.index, r.display())))
             .collect();
         let mut conditions_open = self.ui.trigger_conditions_open;
-        let streams = s.caps.as_ref().is_some_and(|c| c.supports_continuous);
+        let pre_trigger = {
+            use super::capture_opts::PreTrigger;
+            if !s.caps.as_ref().is_some_and(|c| c.supports_continuous) {
+                PreTrigger::DeviceMemory
+            } else if crate::app::waits_in_device(&trig, s.caps.as_ref(), s.settings.sample_rate) {
+                PreTrigger::DeviceTrigger
+            } else {
+                PreTrigger::Everything
+            }
+        };
         let has_rle = s.caps.as_ref().is_some_and(|c| c.rle);
         let thresholds = s.caps.as_ref().and_then(|c| c.thresholds.clone());
         let threshold = s.settings.logic_threshold.clone();
@@ -442,7 +451,7 @@ impl LaApp {
             if mode_idx == 0 {
                 ui.add_space(14.0);
                 out.trigger_changed =
-                    super::capture_opts::trigger_editor(ui, &mut trig, &digital_items, &mut conditions_open, !streams);
+                    super::capture_opts::trigger_editor(ui, &mut trig, &digital_items, &mut conditions_open, pre_trigger);
             }
             // Continuous has no settings of its own.
             if mode_idx != 2 {

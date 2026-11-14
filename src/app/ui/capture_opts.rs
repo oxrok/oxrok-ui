@@ -49,14 +49,25 @@ fn event_glyph(p: &egui::Painter, r: Rect, e: TriggerEvent, c: egui::Color32) {
     p.line(pts, s);
 }
 
+/// What a Trigger capture keeps from before the trigger.
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
+pub(crate) enum PreTrigger {
+    /// Everything: the device streams and the app finds the trigger.
+    Everything,
+    /// The pre-trigger time, in the memory of a buffered device.
+    DeviceMemory,
+    /// The pre-trigger time: a streaming device waits for the trigger
+    /// itself.
+    DeviceTrigger,
+}
+
 /// Returns whether the trigger changed.
-/// `buffered`: the device records into its own buffer.
 pub(crate) fn trigger_editor(
     ui: &mut Ui,
     t: &mut DigitalTrigger,
     channels: &[ChannelItem],
     open: &mut bool,
-    buffered: bool,
+    pre_trigger: PreTrigger,
 ) -> bool {
     let theme = ui.la_theme();
     let before = t.clone();
@@ -162,16 +173,22 @@ pub(crate) fn trigger_editor(
             }
         }
     }
-    // Only buffered devices drop data before the trigger;
-    // streaming devices keep it all.
-    if buffered {
+    // A device that waits for the trigger keeps only this much before
+    // it; one the app scans keeps it all.
+    let help = match pre_trigger {
+        PreTrigger::Everything => None,
+        PreTrigger::DeviceMemory => Some(tr(
+            "This device records into its own memory, so it keeps only this much data before the trigger. Long durations use more device memory; with RLE the result can be longer.",
+        )),
+        PreTrigger::DeviceTrigger => {
+            Some(tr("The device waits for this trigger itself, so the capture keeps only this much data before it."))
+        }
+    };
+    if let Some(help) = help {
         ui.add_space(10.0);
         ui.horizontal(|ui| {
             title(ui, tr("Capture duration before trigger"));
-            super::panels::help_icon(
-                ui,
-                tr("This device records into its own memory, so it keeps only this much data before the trigger. Long durations use more device memory; with RLE the result can be longer."),
-            );
+            super::panels::help_icon(ui, help);
         });
         ui.add_space(6.0);
         time_input(ui, tr("Capture duration before trigger"), &mut t.pre_trigger_seconds, 0.0);

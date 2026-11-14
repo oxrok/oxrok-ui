@@ -125,17 +125,18 @@ firmware-deps:
 # vendor/ and the oxrok CLI (oxrok and RustPython are in the binaries).
 # Signed with SIGN_IDENTITY (a codesign identity), ad-hoc when empty.
 VERSION := $(shell sed -n 's/^version = "\(.*\)"/\1/p' Cargo.toml | head -1)
-# The oxrok CLI, built from the crates.io source at the version Cargo.toml
-# pins, against the package's own Cargo.lock. `cargo install` re-resolves
+# The oxrok CLI, built from the source cargo fetched for the oxrok this
+# build links (a crates.io release or a git revision, as Cargo.lock has
+# it), against the package's own Cargo.lock. `cargo install` re-resolves
 # and picks a conflicting malachite-bigint, so the binary is built directly.
-OXROK_VERSION := $(shell grep '^oxrok = ' Cargo.toml | sed -n 's/.*version = "=\{0,1\}\([^"]*\)".*/\1/p')
+OXROK_SRC = $(shell $(CARGO) metadata --format-version 1 --locked | python3 -c 'import json, os, sys; print(next(os.path.dirname(p["manifest_path"]) for p in json.load(sys.stdin)["packages"] if p["name"] == "oxrok"))')
 # Absolute build dir, shared by the app and the CLI so the CLI reuses the
 # app's cached RustPython/nusb artifacts.
 TARGET_DIR := $(abspath $(if $(CARGO_TARGET_DIR),$(CARGO_TARGET_DIR),target))
 bundle:
 	CARGO_TARGET_DIR=$(TARGET_DIR) $(CARGO) build --release $(if $(APP_FEATURES),--features $(APP_FEATURES))
-	@src=$$(ls -d $${CARGO_HOME:-$$HOME/.cargo}/registry/src/*/oxrok-$(OXROK_VERSION) 2>/dev/null | head -1); \
-	if [ -z "$$src" ]; then echo "oxrok $(OXROK_VERSION) source not in the cargo registry (run '$(CARGO) fetch' first)"; exit 1; fi; \
+	@src="$(OXROK_SRC)"; \
+	if [ ! -f "$$src/Cargo.toml" ]; then echo "oxrok's source not found through '$(CARGO) metadata' (run '$(CARGO) fetch' first)"; exit 1; fi; \
 	work=$$(mktemp -d); trap 'rm -rf "$$work"' EXIT; \
 	cp -R "$$src" "$$work/oxrok"; \
 	(cd "$$work/oxrok" && CARGO_TARGET_DIR=$(TARGET_DIR) $(CARGO) build --release --no-default-features --features cli,nusb,rustpython)

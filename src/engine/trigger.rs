@@ -17,6 +17,11 @@ impl TriggerScanner {
         Self { trigger, rate, pos: 0 }
     }
 
+    /// The sample rate of the data, when it is not the one asked for.
+    pub fn set_rate(&mut self, rate: u64) {
+        self.rate = rate;
+    }
+
     /// Continues the scan from `pos` (e.g. near a hardware trigger).
     pub fn skip_to(&mut self, pos: u64) {
         self.pos = pos;
@@ -25,6 +30,41 @@ impl TriggerScanner {
     /// How far the scan has got.
     pub fn progress(&self) -> u64 {
         self.pos
+    }
+
+    /// The trigger of a device that reported its own at sample `at`: the
+    /// match nearest to it (the data before the trigger may match too),
+    /// or else the device's position. `data` is the range stored so far
+    /// and `ended` whether more will come; `None` waits for more.
+    ///
+    /// A capture that starts at the device's trigger has its edge before
+    /// the data, and a matching edge after it is another one: the trigger
+    /// stays where the device put it.
+    pub fn scan_near<'a>(
+        &mut self,
+        channel: impl Fn(ChannelId) -> Option<&'a DigitalChannel>,
+        at: u64,
+        data: (u64, u64),
+        ended: bool,
+    ) -> Option<u64> {
+        const WINDOW: u64 = 64;
+        let (begin, end) = data;
+        if at <= begin {
+            return Some(at);
+        }
+        let stop = end.min(at + WINDOW);
+        if stop < at + WINDOW && !ended {
+            // Not all of the window yet.
+            return None;
+        }
+        self.pos = self.pos.max(at.saturating_sub(WINDOW));
+        let mut nearest: Option<u64> = None;
+        while let Some(t) = self.scan(&channel, stop) {
+            if nearest.is_none_or(|n| t.abs_diff(at) < n.abs_diff(at)) {
+                nearest = Some(t);
+            }
+        }
+        Some(nearest.unwrap_or(at.min(end.saturating_sub(1))))
     }
 
     /// Scans transitions in `[progress, end)`; returns the trigger sample
@@ -148,6 +188,35 @@ mod tests {
             post_trigger_seconds: 1.0,
             pre_trigger_seconds: 0.0,
         }
+    }
+
+    /// With the device's own trigger position: the match nearest to it,
+    /// and the position itself where the capture starts at the trigger.
+    #[test]
+    fn near_the_devices_trigger() {
+        let rising = || TriggerScanner::new(trig(TriggerEvent::Rising, 0.0, 0.0, vec![]), 1);
+        // Rises at 10, 300, 500, 524 and 560.
+        let d0 = chan(false, &[10, 20, 300, 480, 500, 520, 524, 540, 560], 1000);
+        let get = |c: ChannelId| (c.index == 0).then_some(&d0);
+        // The edges before it are pre-trigger data; the device's
+        // position is a few samples late.
+        assert_eq!(rising().scan_near(get, 527, (0, 1000), true), Some(524));
+        // No edge around it: the device's position.
+        assert_eq!(rising().scan_near(get, 800, (0, 1000), true), Some(800));
+        // The data around it is still to come.
+        assert_eq!(rising().scan_near(get, 800, (0, 810), false), None);
+        assert_eq!(rising().scan_near(get, 800, (0, 810), true), Some(800));
+
+        // No time before the trigger: the capture starts high at the
+        // trigger, falls at 8 and rises again at 16, which is no trigger.
+        let mut d0 = DigitalChannel::new();
+        d0.start(100, true);
+        d0.push_transition(108);
+        d0.push_transition(116);
+        d0.extend_to(200);
+        let get = |c: ChannelId| (c.index == 0).then_some(&d0);
+        assert_eq!(rising().scan_near(get, 100, (100, 200), true), Some(100));
+        assert_eq!(rising().scan_near(get, 100, (100, 120), false), Some(100));
     }
 
     /// U-08: edges, pulses (min/max inclusive), linked conditions; the

@@ -3512,8 +3512,7 @@ dependencies = [
 [[package]]
 name = "oxrok"
 version = "0.2.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "9bbfc23e80442c4c0f82be2cc29f1e890dbec667431c036d0dc7ec20b58f0189"
+source = "git+https://github.com/oxrok/oxrok?rev=7daea63f390e6d681b5b08ec903d76ea55d61d49#7daea63f390e6d681b5b08ec903d76ea55d61d49"
 dependencies = [
  "aes",
  "async-hid",
@@ -3524,6 +3523,7 @@ dependencies = [
  "log",
  "malachite-bigint",
  "nusb",
+ "oxrok-firmware-fetch",
  "pyo3",
  "rustix 1.1.5",
  "rustpython-pylib",
@@ -3536,6 +3536,7 @@ dependencies = [
  "rustpython-vm",
  "serialport",
  "sha2 0.10.9",
+ "socket2",
  "thiserror 2.0.21",
  "zip",
 ]

@@ -968,6 +968,9 @@ const ENTRIES: &[(&str, &str, &str)] = &[
     ("This device records into its own memory, so it keeps only this much data before the trigger. Long durations use more device memory; with RLE the result can be longer.",
      "Este dispositivo graba en su propia memoria, así que solo conserva esta cantidad de datos antes del disparo. Las duraciones largas usan más memoria del dispositivo; con RLE el resultado puede ser más largo.",
      "此设备录制到自身内存，因此只保留触发前的这段时间的数据。时长越长，占用的设备内存越多；使用 RLE 时结果可能更长。"),
+    ("The device waits for this trigger itself, so the capture keeps only this much data before it.",
+     "El dispositivo espera este disparo por sí mismo, así que la captura solo conserva esta cantidad de datos antes de él.",
+     "设备自行等待此触发，因此采集只保留触发前这段时间的数据。"),
     ("Capture duration after trigger", "Duración de captura después del disparo", "触发后的采集时长"),
 
     // ---- Device options ----

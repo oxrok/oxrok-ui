@@ -63,6 +63,21 @@ impl DeviceInfo {
     }
 }
 
+/// A USB serial port that, by its USB ids, may hold a device its driver
+/// finds only when told the port. Nothing was sent to it.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct SerialCandidate {
+    pub driver: String,
+    /// The port's path, the `conn` to scan.
+    pub port: String,
+    /// The USB serial number, which names the board whatever port it is on.
+    pub usb_serial: Option<String>,
+    /// What the ids say it is, e.g. "Raspberry Pi Pico".
+    pub label: String,
+    /// The firmware the driver talks to.
+    pub firmware: String,
+}
+
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Rates {
     List(Vec<u64>),

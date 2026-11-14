@@ -31,6 +31,12 @@ pub trait Backend: Send + Sync + 'static {
         Err(BackendError::Unsupported("connecting by address".into()))
     }
 
+    /// Serial ports that look like a device to connect at, by their USB
+    /// ids alone: nothing is opened. Ports already connected are left out.
+    fn serial_candidates(&self) -> Vec<SerialCandidate> {
+        Vec::new()
+    }
+
     /// The device library's version, e.g. "libsigrok 0.6.0".
     fn library_version(&self) -> Option<String> {
         None

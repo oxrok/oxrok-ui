@@ -432,3 +432,97 @@ fn install_firmware_without_a_known_source() {
     r.h.snapshot("install_firmware_unknown");
     assert!(r.h.query_by_label("Install from these files").is_none());
 }
+
+const PICO: &str = "raspberrypi-pico";
+const ASK: &str = "Raspberry Pi Pico found on /dev/cu.usbmodem1. Connect it as a logic analyzer?";
+
+impl Rig {
+    /// A device poll later.
+    fn poll(&mut self) {
+        self.clock.advance(Duration::from_secs(2));
+        self.h.run();
+    }
+
+    fn asked(&self, body: &str) -> usize {
+        self.h.state().toasts().iter().filter(|t| t.body == body).count()
+    }
+
+    fn has_pico(&self) -> bool {
+        self.h.state().devices().unwrap().iter().any(|d| d.driver == PICO)
+    }
+}
+
+/// A board that looks like a Pico is asked about before anything is
+/// sent to its port, once. Connected, it is remembered by its USB serial
+/// number and comes back without a question, on another port too; the
+/// rescans leave it alone.
+#[test]
+fn serial_board_is_asked_about_then_remembered() {
+    let mut r = rig();
+    r.mock.plug_serial("/dev/cu.usbmodem1", "E6625887", true);
+    r.poll();
+    assert_eq!(r.asked(ASK), 1);
+    for _ in 0..3 {
+        r.poll();
+    }
+    assert_eq!(r.asked(ASK), 1, "asked once");
+    assert!(r.mock.probed().is_empty() && !r.has_pico(), "nothing was sent to the port");
+
+    // Not now: until it is plugged in again.
+    r.h.get_by_role_and_label(egui::Role::Button, "Not now").click();
+    r.h.run();
+    r.poll();
+    assert_eq!(r.asked(ASK), 0);
+    assert!(r.mock.probed().is_empty());
+    r.mock.unplug_serial("/dev/cu.usbmodem1");
+    r.poll();
+    r.mock.plug_serial("/dev/cu.usbmodem1", "E6625887", true);
+    r.poll();
+    assert_eq!(r.asked(ASK), 1, "asked again after a replug");
+
+    r.h.get_by_role_and_label(egui::Role::Button, "Connect").click();
+    r.h.run();
+    assert!(r.has_pico());
+    assert_eq!(r.mock.probed(), [(PICO.to_owned(), "/dev/cu.usbmodem1".to_owned())]);
+    assert_eq!(r.h.state().settings().known_serial_devices, [(PICO.to_owned(), "E6625887".to_owned())]);
+    assert_eq!(r.asked(ASK), 0);
+    r.h.get_by_label("1 Device");
+    for _ in 0..3 {
+        r.poll();
+    }
+    assert_eq!(r.mock.probed().len(), 1, "the rescans do not ask the board again");
+    assert!(r.has_pico());
+
+    // Unplugged, then back on another port: known, so no question.
+    r.mock.unplug_serial("/dev/cu.usbmodem1");
+    r.poll();
+    assert!(!r.has_pico());
+    r.mock.plug_serial("/dev/cu.usbmodem2", "E6625887", true);
+    r.poll();
+    assert!(r.has_pico());
+    assert_eq!(r.mock.probed().last().unwrap().1, "/dev/cu.usbmodem2");
+    assert!(r.h.state().toasts().iter().all(|t| !t.body.contains("Connect it as")), "no question");
+    assert_eq!(r.h.state().settings().known_serial_devices.len(), 1);
+
+    // Another board is asked about.
+    r.mock.plug_serial("/dev/cu.usbmodem1", "AAAA0001", true);
+    r.poll();
+    assert_eq!(r.asked(ASK), 1);
+}
+
+/// A Pico with other firmware does not answer: said so, and not
+/// remembered.
+#[test]
+fn serial_board_without_the_firmware() {
+    let mut r = rig();
+    r.mock.plug_serial("/dev/cu.usbmodem1", "E6625887", false);
+    r.poll();
+    r.h.get_by_role_and_label(egui::Role::Button, "Connect").click();
+    r.h.run();
+    let said = "The Raspberry Pi Pico on /dev/cu.usbmodem1 did not answer. It needs the sigrok-pico firmware.";
+    assert_eq!(r.asked(said), 1);
+    assert!(!r.has_pico());
+    assert!(r.h.state().settings().known_serial_devices.is_empty());
+    r.poll();
+    assert_eq!(r.asked(ASK), 0, "not asked again while it stays plugged in");
+}

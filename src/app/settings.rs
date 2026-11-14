@@ -352,6 +352,10 @@ pub struct AppSettings {
     pub onboarding_done: bool,
     /// The last "driver:conn" entries that found a device.
     pub recent_connections: Vec<String>,
+    /// Boards on USB serial ports that were connected once, as
+    /// `(driver, USB serial number)`: they connect again without asking,
+    /// on whatever port.
+    pub known_serial_devices: Vec<(String, String)>,
 }
 
 impl AppSettings {
@@ -421,6 +425,7 @@ impl Default for AppSettings {
             hints_shown: Vec::new(),
             onboarding_done: false,
             recent_connections: Vec::new(),
+            known_serial_devices: Vec::new(),
         }
     }
 }

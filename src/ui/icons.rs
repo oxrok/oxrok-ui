@@ -350,3 +350,74 @@ pub fn dock(painter: &Painter, r: Rect, color: Color32) {
     painter.line_segment([p(r, 0.75, 0.5), p(r, 0.25, 0.5)], s);
     painter.line(vec![p(r, 0.36, 0.38), p(r, 0.24, 0.5), p(r, 0.36, 0.62)], s);
 }
+
+// ---- trigger conditions (a channel row's trigger icon) ----
+
+/// No condition: a small dot.
+pub fn trig_none(painter: &Painter, r: Rect, color: Color32) {
+    painter.circle_filled(r.center(), 1.5, color);
+}
+
+/// A rising edge.
+pub fn trig_rising(painter: &Painter, r: Rect, color: Color32) {
+    let pts = vec![p(r, 0.08, 0.85), p(r, 0.5, 0.85), p(r, 0.5, 0.15), p(r, 0.92, 0.15)];
+    painter.line(pts, Stroke::new(STROKE, color));
+}
+
+/// A falling edge.
+pub fn trig_falling(painter: &Painter, r: Rect, color: Color32) {
+    let pts = vec![p(r, 0.08, 0.15), p(r, 0.5, 0.15), p(r, 0.5, 0.85), p(r, 0.92, 0.85)];
+    painter.line(pts, Stroke::new(STROKE, color));
+}
+
+/// Either edge: both crossing.
+pub fn trig_either(painter: &Painter, r: Rect, color: Color32) {
+    let s = Stroke::new(STROKE, color);
+    painter.line(vec![p(r, 0.05, 0.85), p(r, 0.3, 0.85), p(r, 0.7, 0.15), p(r, 0.95, 0.15)], s);
+    painter.line(vec![p(r, 0.05, 0.15), p(r, 0.3, 0.15), p(r, 0.7, 0.85), p(r, 0.95, 0.85)], s);
+}
+
+/// High: a line at the top, over a faint base.
+pub fn trig_high(painter: &Painter, r: Rect, color: Color32) {
+    painter.line_segment([p(r, 0.1, 0.2), p(r, 0.9, 0.2)], Stroke::new(STROKE + 0.5, color));
+    painter.line_segment([p(r, 0.1, 0.85), p(r, 0.9, 0.85)], Stroke::new(1.0, color.gamma_multiply(0.35)));
+}
+
+/// Low: a line at the bottom, under a faint top.
+pub fn trig_low(painter: &Painter, r: Rect, color: Color32) {
+    painter.line_segment([p(r, 0.1, 0.85), p(r, 0.9, 0.85)], Stroke::new(STROKE + 0.5, color));
+    painter.line_segment([p(r, 0.1, 0.2), p(r, 0.9, 0.2)], Stroke::new(1.0, color.gamma_multiply(0.35)));
+}
+
+/// A high pulse, at the falling edge that ends it.
+pub fn trig_pulse_high(painter: &Painter, r: Rect, color: Color32) {
+    let pts = vec![
+        p(r, 0.02, 0.85),
+        p(r, 0.25, 0.85),
+        p(r, 0.25, 0.15),
+        p(r, 0.72, 0.15),
+        p(r, 0.72, 0.85),
+        p(r, 0.98, 0.85),
+    ];
+    painter.line(pts, Stroke::new(STROKE, color));
+}
+
+/// A low pulse, at the rising edge that ends it.
+pub fn trig_pulse_low(painter: &Painter, r: Rect, color: Color32) {
+    let pts = vec![
+        p(r, 0.02, 0.15),
+        p(r, 0.25, 0.15),
+        p(r, 0.25, 0.85),
+        p(r, 0.72, 0.85),
+        p(r, 0.72, 0.15),
+        p(r, 0.98, 0.15),
+    ];
+    painter.line(pts, Stroke::new(STROKE, color));
+}
+
+/// A channel of a value range: a bus segment.
+pub fn trig_range(painter: &Painter, r: Rect, color: Color32) {
+    let pts =
+        vec![p(r, 0.05, 0.5), p(r, 0.22, 0.2), p(r, 0.78, 0.2), p(r, 0.95, 0.5), p(r, 0.78, 0.8), p(r, 0.22, 0.8)];
+    painter.add(PathShape::closed_line(pts, Stroke::new(STROKE, color)));
+}

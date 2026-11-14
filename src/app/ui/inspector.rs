@@ -423,7 +423,24 @@ impl LaApp {
             .filter(|r| r.channel.kind == ChannelKind::Digital && s.settings.is_enabled(r.channel))
             .map(|r| (r.channel, format!("{:02}.  {}", r.channel.index, r.display())))
             .collect();
-        let mut conditions_open = self.ui.trigger_conditions_open;
+        let trigger_info = {
+            let hw = s.caps.as_ref().and_then(|c| c.hw_trigger.as_ref());
+            let name = |c: ChannelId| s.row(c).map_or_else(|| c.short_name(), |r| r.identifier());
+            let shown = crate::app::trigger::stages(hw).max(if trig.stages[1].is_empty() { 1 } else { 2 });
+            super::capture_opts::TriggerInfo {
+                stages: ["A", "B"]
+                    .into_iter()
+                    .zip(&trig.stages)
+                    .take(shown)
+                    .map(|(letter, st)| (letter, super::trigger_ui::stage_summary(st, &name)))
+                    .collect(),
+                status: match crate::app::plan_trigger(&trig, s.caps.as_ref(), 0, s.settings.sample_rate) {
+                    Ok(e) if e.device().is_some() => Ok(tr("The device waits for this trigger.")),
+                    Ok(_) => Ok(tr("The app looks for this trigger in the data.")),
+                    Err(e) => Err(e.text()),
+                },
+            }
+        };
         let pre_trigger = {
             use super::capture_opts::PreTrigger;
             if !s.caps.as_ref().is_some_and(|c| c.supports_continuous) {
@@ -450,8 +467,8 @@ impl LaApp {
             }
             if mode_idx == 0 {
                 ui.add_space(14.0);
-                out.trigger_changed =
-                    super::capture_opts::trigger_editor(ui, &mut trig, &digital_items, &mut conditions_open, pre_trigger);
+                (out.trigger_changed, out.trigger_details) =
+                    super::capture_opts::trigger_editor(ui, &mut trig, &digital_items, &trigger_info, pre_trigger);
             }
             // Continuous has no settings of its own.
             if mode_idx != 2 {
@@ -552,7 +569,9 @@ impl LaApp {
             s.settings.mode = if streams { CaptureMode::Continuous } else { CaptureMode::Timed };
             changed = true;
         }
-        self.ui.trigger_conditions_open = conditions_open;
+        if edits.trigger_details {
+            self.ui.trigger_details = Some(0);
+        }
         let s = self.session.as_mut().unwrap();
         if edits.rle_changed {
             s.settings.rle = rle;
@@ -586,6 +605,7 @@ struct PanelEdits {
     timer_changed: bool,
     rle_changed: bool,
     trigger_changed: bool,
+    trigger_details: bool,
     threshold: Option<crate::backend::ThresholdChoice>,
     step: i32,
 }

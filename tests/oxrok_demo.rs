@@ -96,7 +96,7 @@ fn pulse_trigger_waits_in_the_device() {
     use oxrok_ui::backend::{ConfValue, OptionScope};
     use oxrok_ui::core::ChannelId;
     use oxrok_ui::core::capture::CaptureMode;
-    use oxrok_ui::core::trigger::TriggerEvent;
+    use oxrok_ui::core::trigger::{DigitalTrigger, Match};
     let (d3, d5) = (ChannelId::digital(3), ChannelId::digital(5));
     let rate = 1_000_000;
     let mut h = open_demo();
@@ -114,14 +114,12 @@ fn pulse_trigger_waits_in_the_device() {
         // The app starts with D0, D1 and the analog channels.
         s.settings.set_enabled(d3, true);
         s.settings.set_enabled(d5, true);
-        let t = &mut s.settings.trigger;
-        t.channel = Some(d3);
-        t.event = TriggerEvent::PositivePulse;
         // D3's pulses are 8 us; none is 9 to 15 us wide.
-        (t.pulse_min, t.pulse_max) = (9e-6, 15e-6);
-        t.linked = vec![(d5, true)];
+        let mut t = DigitalTrigger::pulse(d3, true, 9e-6, 15e-6);
+        t.set(0, d5, Some(Match::High));
         t.pre_trigger_seconds = 0.01;
         t.post_trigger_seconds = 0.05;
+        s.settings.trigger = t;
     }
     h.run();
     let cli = h.state().session().unwrap().cli_command().one_line();
@@ -150,7 +148,7 @@ fn pulse_trigger_waits_in_the_device() {
     // 6 to 10 us: the capture ends by itself, after the post-trigger time.
     {
         let t = &mut h.state_mut().session_mut().unwrap().settings.trigger;
-        (t.pulse_min, t.pulse_max) = (6e-6, 10e-6);
+        t.stages[0].hold = Some(oxrok_ui::core::trigger::Hold::Between(6e-6, 10e-6));
     }
     h.key_press(Key::Space);
     until(&mut h, "finished", |a| a.session().unwrap().state == CaptureState::Finished);
@@ -167,4 +165,60 @@ fn pulse_trigger_waits_in_the_device() {
     assert!(!level(d3, t) && !level(d3, t - 9), "D3 falls at the trigger, after a pulse");
     assert!((1..=8).all(|back| level(d3, t - back)), "8 samples wide");
     assert!(level(d5, t), "D5 high at the trigger");
+}
+
+/// Two stages and a count are the device's to find: after D3 rises, the
+/// third fall of D2. The capture is the stretch around that sample, and
+/// the command line says the same trigger.
+#[test]
+fn stages_and_a_count_go_to_the_device() {
+    use oxrok_ui::backend::{ConfValue, OptionScope};
+    use oxrok_ui::core::ChannelId;
+    use oxrok_ui::core::capture::CaptureMode;
+    use oxrok_ui::core::trigger::{DigitalTrigger, Match, StageCount};
+    let (d2, d3) = (ChannelId::digital(2), ChannelId::digital(3));
+    let mut h = open_demo();
+    {
+        let s = h.state_mut().session_mut().unwrap();
+        let hw = s.caps.as_ref().unwrap().hw_trigger.clone().expect("the demo has a trigger");
+        assert!(hw.count && hw.stages() == 2, "with counts and a second stage: {hw:?}");
+        s.settings.sample_rate = 1_000_000;
+        s.settings
+            .device_options
+            .entry(OptionScope::Group("Logic".into()))
+            .or_default()
+            .insert("pattern".into(), ConfValue::Str("incremental".into()));
+        s.settings.mode = CaptureMode::Triggered;
+        s.settings.set_enabled(d2, true);
+        s.settings.set_enabled(d3, true);
+        let mut t = DigitalTrigger::on(d3, Match::Rising);
+        t.set(1, d2, Some(Match::Falling));
+        t.stages[1].count = Some(StageCount { n: 3, consecutive: false });
+        t.pre_trigger_seconds = 0.01;
+        t.post_trigger_seconds = 0.05;
+        s.settings.trigger = t;
+    }
+    h.run();
+    // Stage columns A and B on the rows.
+    h.get_by_role_and_label(egui::Role::Button, "Trigger A on D3");
+    h.get_by_role_and_label(egui::Role::Button, "Trigger B on D2");
+    let cli = h.state().session().unwrap().cli_command().one_line();
+    assert!(cli.contains(r#"-t "D3=r;D2=f*3""#), "{cli}");
+
+    h.key_press(Key::Space);
+    until(&mut h, "finished", |a| a.session().unwrap().state == CaptureState::Finished);
+    let s = h.state().session().unwrap();
+    let cap = s.capture.as_ref().unwrap().read();
+    let t = cap.trigger.expect("the trigger");
+    assert_eq!(cap.hw_trigger, Some(t), "the device's sample, as it is");
+    // The device armed its trigger after the 10 ms to keep before it.
+    let (begin, _) = cap.sample_range().unwrap();
+    assert!(t - begin >= 10_000, "{} samples before the trigger", t - begin);
+    let (c2, c3) = (cap.channel(d2).unwrap(), cap.channel(d3).unwrap());
+    assert_eq!((c2.level_at(t - 1), c2.level_at(t)), (Some(true), Some(false)), "D2 falls at the trigger");
+    // The counter's D2 falls every 8 samples and D3 rises every 16, on
+    // one of those falls: the third fall after is 24 samples later.
+    assert_eq!((c3.level_at(t - 25), c3.level_at(t - 24)), (Some(false), Some(true)), "D3 rose 24 samples before");
+    let (_, end) = cap.sample_range().unwrap();
+    assert!(end - t >= 50_000, "the post-trigger time: {} samples", end - t);
 }

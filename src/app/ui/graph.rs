@@ -49,16 +49,20 @@ pub(crate) struct Layout {
     pub rows: Rect,
     pub plot_rows: Rect,
     pub scrollbar: Rect,
+    /// The label column, the trigger icons at its right included.
     pub label_w: f32,
+    /// The width of the trigger icons, 0 without them.
+    pub trig_w: f32,
     /// The read-only banner under the toolbar, for loaded files.
     pub banner: Option<Rect>,
 }
 
 impl Layout {
-    fn new(rect: Rect, label_width: f32, banner: bool) -> Self {
-        // 53 pt (collapsed) to 53 + 240 pt; the plot keeps ≥ 50 pt.
-        let max = super::rowctl::LABEL_MAX.min(rect.width() - 50.0).max(super::rowctl::LABEL_MIN);
-        let label_w = label_width.clamp(super::rowctl::LABEL_MIN, max);
+    fn new(rect: Rect, label_width: f32, trig_w: f32, banner: bool) -> Self {
+        // 53 pt (collapsed) to 53 + 240 pt; the plot keeps ≥ 50 pt. The
+        // trigger icons add to it, so a collapsed label keeps them.
+        let max = super::rowctl::LABEL_MAX.min(rect.width() - 50.0 - trig_w).max(super::rowctl::LABEL_MIN);
+        let label_w = label_width.clamp(super::rowctl::LABEL_MIN, max) + trig_w;
         let plot_left = rect.left() + label_w;
         let toolbar = Rect::from_min_max(rect.min, pos2(rect.right(), rect.top() + TOOLBAR_H));
         let banner = banner.then(|| {
@@ -73,7 +77,7 @@ impl Layout {
         let scrollbar = Rect::from_min_max(pos2(plot_left, rect.bottom() - SCROLLBAR_H), rect.max);
         let rows = Rect::from_min_max(pos2(rect.left(), ruler.bottom()), pos2(rect.right(), scrollbar.top()));
         let plot_rows = Rect::from_min_max(pos2(plot_left, rows.top()), rows.max);
-        Self { graph: rect, toolbar, label_header, ruler, rows, plot_rows, scrollbar, label_w, banner }
+        Self { graph: rect, toolbar, label_header, ruler, rows, plot_rows, scrollbar, label_w, trig_w, banner }
     }
 }
 
@@ -83,12 +87,13 @@ impl LaApp {
         self.ui.graph_rect = super::DefaultRect(rect);
         let read_only = self.session.as_ref().is_some_and(|s| s.is_read_only());
         let banner = read_only && !self.session.as_ref().is_some_and(|s| s.banner_closed);
-        let l = Layout::new(rect, self.settings.label_width, banner);
+        let cols = self.trigger_cols();
+        let l = Layout::new(rect, self.settings.label_width, cols.as_ref().map_or(0.0, |c| c.width()), banner);
         self.auto_layout(ui, &l);
         self.update_view(l.plot_rows.width() as f64);
         let plot = self.graph_input(ui, &l);
         let Some(view) = self.update_view(l.plot_rows.width() as f64) else { return };
-        self.paint_rows(ui, &l, &view);
+        self.paint_rows(ui, &l, &view, cols.as_ref());
         self.label_splitter(ui, &l);
         // On the plot cell: the row under the right-click.
         if plot.secondary_clicked()
@@ -102,6 +107,9 @@ impl LaApp {
         self.ranges_ui(ui, &l, &view);
         self.paint_marquee(ui, &l);
         self.paint_ruler(ui, &l, &view);
+        if let Some(cols) = &cols {
+            self.trigger_header(ui, &l, cols);
+        }
         self.markers_ui(ui, &l, &view, &plot);
         self.trigger_ui(ui, &l, &view);
         // A click on empty plot space deselects.
@@ -540,7 +548,17 @@ impl LaApp {
         if let Some(m) = pick
             && m != mode
         {
-            self.session.as_mut().unwrap().settings.mode = m;
+            let s = self.session.as_mut().unwrap();
+            s.settings.mode = m;
+            // Trigger mode starts with something to wait for.
+            if m == CaptureMode::Triggered && s.settings.trigger.is_empty() {
+                let times = s.settings.trigger.clone();
+                s.settings.trigger = crate::core::trigger::DigitalTrigger {
+                    post_trigger_seconds: times.post_trigger_seconds,
+                    pre_trigger_seconds: times.pre_trigger_seconds,
+                    ..crate::core::trigger::DigitalTrigger::reset(&s.settings.enabled)
+                };
+            }
             self.mark_settings_dirty();
         }
     }
@@ -831,8 +849,10 @@ impl LaApp {
             return Some(tr("Enable at least one channel to record.").into());
         }
         let triggered = s.settings.mode == crate::core::capture::CaptureMode::Triggered;
-        (triggered && !s.settings.trigger.is_valid(&s.settings.enabled))
-            .then(|| tr("The trigger setup is invalid.").into())
+        triggered
+            .then(|| crate::app::plan_trigger(&s.settings.trigger, s.caps.as_ref(), 0, s.settings.sample_rate).err())
+            .flatten()
+            .map(|e| e.text())
     }
 
     /// Timer or trigger status above the label column.

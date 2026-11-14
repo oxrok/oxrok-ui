@@ -11,13 +11,11 @@ mod caps;
 mod decode;
 mod files;
 mod log;
+pub(crate) mod trigger;
 
 use crate::backend::*;
 use crate::core::{ChannelId, ChannelKind, WallClock};
-use oxrok::core::{
-    Device as OxDevice, Driver, Key, Packet, PacketSink, Registry, Trigger, TriggerDuration, TriggerMatch as OxMatch,
-    Value,
-};
+use oxrok::core::{Device as OxDevice, Driver, Key, Packet, PacketSink, Registry, Value};
 use parking_lot::Mutex;
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::Path;
@@ -571,8 +569,7 @@ impl Drop for OxrokDevice {
     }
 }
 
-/// A one-stage trigger, with the pulse width as the stage's duration,
-/// after setting the capture ratio.
+/// The device's trigger, after setting the capture ratio.
 fn set_trigger(
     dev: &mut dyn OxDevice,
     trigger: Option<&HwTrigger>,
@@ -587,24 +584,10 @@ fn set_trigger(
     let Some(t) = trigger else {
         return dev.set_trigger(None).map_err(device_error);
     };
-    let mut trig = Trigger::new();
-    for (id, m) in &t.matches {
-        let (_, pos) = channels
-            .iter()
-            .find(|(c, _)| c == id)
-            .ok_or_else(|| BackendError::Device(format!("no channel {id:?} for the trigger")))?;
-        let m = match m {
-            TriggerMatch::Zero => OxMatch::Zero,
-            TriggerMatch::One => OxMatch::One,
-            TriggerMatch::Rising => OxMatch::Rising,
-            TriggerMatch::Falling => OxMatch::Falling,
-            TriggerMatch::Edge => OxMatch::Edge,
-        };
-        trig.add(0, *pos, m);
-    }
-    if let Some((min, max)) = t.pulse_samples {
-        trig.set_duration(0, TriggerDuration::Between(min, max));
-    }
+    let trig = trigger::to_oxrok(t, |id| channels.iter().find(|(c, _)| *c == id).map(|x| x.1))
+        .map_err(BackendError::Device)?;
+    // The device's own rules, in its own words, before it is armed.
+    trig.check(&dev.trigger_features()).map_err(device_error)?;
     dev.set_trigger(Some(trig)).map_err(device_error)
 }
 
@@ -823,11 +806,7 @@ mod tests {
     /// data (DSLogic).
     #[test]
     fn a_capture_that_waits_for_the_trigger_leaves_stream_mode() {
-        let trigger = HwTrigger {
-            matches: vec![(ChannelId::digital(0), TriggerMatch::Rising)],
-            pulse_samples: None,
-            pre_trigger_percent: 10,
-        };
+        let trigger = HwTrigger::one_stage(vec![(ChannelId::digital(0), TriggerMatch::Rising)], 10);
         let waits = AcquisitionPlan { trigger: Some(trigger), ..AcquisitionPlan::new(AcquisitionLimit::Samples(1000)) };
         let limit = ("limit_samples".to_owned(), Value::U64(1000));
 

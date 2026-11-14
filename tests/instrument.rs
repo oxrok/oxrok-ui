@@ -243,9 +243,13 @@ fn command_line() {
     {
         let s = r.h.state_mut().session_mut().unwrap();
         s.settings.mode = oxrok_ui::core::capture::CaptureMode::Triggered;
-        s.settings.trigger.channel = Some(oxrok_ui::core::ChannelId::digital(1));
-        s.settings.trigger.event = oxrok_ui::core::trigger::TriggerEvent::Falling;
-        s.settings.trigger.post_trigger_seconds = 0.5;
+        s.settings.trigger = oxrok_ui::core::trigger::DigitalTrigger {
+            post_trigger_seconds: 0.5,
+            ..oxrok_ui::core::trigger::DigitalTrigger::on(
+                oxrok_ui::core::ChannelId::digital(1),
+                oxrok_ui::core::trigger::Match::Falling,
+            )
+        };
     }
     r.h.run();
     assert_eq!(r.cli(), r#"oxrok -d demo -C D0,D1 -c samplerate=8m -t D1=f --time 500 -o "Session 0.sr""#);

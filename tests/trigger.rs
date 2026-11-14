@@ -9,6 +9,7 @@ use oxrok_ui::app::{AppOptions, LaApp};
 use oxrok_ui::backend::{MockBackend, MockOptions, Streaming};
 use oxrok_ui::core::capture::{CaptureMode, CaptureState};
 use oxrok_ui::core::markers::TimeOrigin;
+use oxrok_ui::core::trigger::Match;
 use oxrok_ui::core::{CaptureTime, ChannelId, ManualClock};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
@@ -115,18 +116,19 @@ fn trigger_mode() {
     r.h.run_steps(4);
     let s = r.h.state().session().unwrap();
     assert_eq!(s.settings.mode, CaptureMode::Triggered);
-    assert_eq!(s.settings.trigger.channel, Some(D0), "the lowest enabled channel");
+    assert_eq!(s.settings.trigger.get(0, D0), Some(Match::Rising), "the lowest enabled channel");
     r.type_time("Capture duration after trigger", "100ms");
     assert!((r.h.state().session().unwrap().settings.trigger.post_trigger_seconds - 0.1).abs() < 1e-12);
     r.record_until_done();
     let s = r.h.state().session().unwrap();
-    // The mock's D0 starts high and falls at 0.5 ms: the first rise is at 1 ms.
+    // The mock's D0 rises every 1 ms. The trigger is looked for after
+    // the time to keep before it, 0.1 s: the rise at 100 ms.
     let t = s.trigger.expect("trigger found");
-    assert_eq!(t, CaptureTime::from_sample(RATE / 1000, RATE));
+    assert_eq!(t, CaptureTime::from_sample(RATE / 10, RATE));
     assert_eq!(s.origin, TimeOrigin::Trigger);
     assert_eq!(s.t0(), t, "the ruler counts from the trigger");
     let (_, end) = s.capture.as_ref().unwrap().read().sample_range().unwrap();
-    let post = end - RATE / 1000;
+    let post = end - RATE / 10;
     assert!((RATE / 10..RATE / 10 + RATE / 5).contains(&post), "stopped about 0.1 s after: {post}");
     let s = r.h.state().session().unwrap();
     // The flag: centered after the capture.
@@ -143,16 +145,19 @@ fn invalid_trigger_badge_and_toast() {
     r.h.run_steps(3);
     {
         let s = r.h.state_mut().session_mut().unwrap();
-        s.settings.trigger.event = oxrok_ui::core::trigger::TriggerEvent::PositivePulse;
-        s.settings.trigger.pulse_min = 0.5;
-        s.settings.trigger.pulse_max = 0.1;
+        s.settings.trigger = oxrok_ui::core::trigger::DigitalTrigger::pulse(D0, true, 0.5, 0.1);
     }
     r.h.run_steps(2);
-    assert_eq!(r.h.state().capture_blocked().as_deref(), Some("The trigger setup is invalid."));
+    let why = "No whole number of samples fits the duration at this sample rate.";
+    assert_eq!(r.h.state().capture_blocked().as_deref(), Some(why));
     r.h.key_press(Key::Space);
     r.h.run_steps(3);
     assert_eq!(r.state(), CaptureState::Empty);
-    assert!(r.h.state().toasts().iter().any(|t| t.body == "The digital trigger setup is invalid."));
+    assert!(r.h.state().toasts().iter().any(|t| t.body == why));
+    // Nothing to wait for is no trigger either.
+    r.h.state_mut().session_mut().unwrap().settings.trigger = Default::default();
+    r.h.run_steps(2);
+    assert_eq!(r.h.state().capture_blocked().as_deref(), Some("Set a trigger condition on a channel first."));
 }
 
 /// Starting again keeps analyzers and names, clears the markers.
@@ -194,14 +199,15 @@ fn start_failure() {
     assert_eq!(r.state(), CaptureState::Empty);
 }
 
-/// Buffered devices get "Capture duration before trigger";
-/// streaming devices don't (they keep everything before the trigger).
+/// "Capture duration before trigger" is kept before the trigger on a
+/// streaming device and on a buffered one.
 #[test]
 fn pre_trigger_duration_on_buffered_devices() {
     let mut r = Rig::new(MockOptions::default());
     pick_mode(&mut r.h, "Trigger");
     r.h.run_steps(3);
-    assert!(r.h.query_by_label("Capture duration before trigger").is_none());
+    // A streaming device has it too: the trigger is looked for after it.
+    assert!(r.h.query_all_by_label("Capture duration before trigger").next().is_some());
 
     let mut r = Rig::new(MockOptions { buffered: Some(1 << 30), ..MockOptions::default() });
     pick_mode(&mut r.h, "Trigger");
@@ -212,11 +218,12 @@ fn pre_trigger_duration_on_buffered_devices() {
     assert!((t.pre_trigger_seconds - 0.02).abs() < 1e-12);
     r.record_until_done();
     let s = r.h.state().session().unwrap();
-    // The mock has no hardware trigger, so its buffer starts at once; the
-    // software trigger (1 ms) plus 80 ms ends it before the 100 ms limit.
+    // The mock has no hardware trigger, so its buffer starts at once. The
+    // app looks for the trigger after the 20 ms to keep before it: the
+    // rise at 20 ms, and 80 ms more is the 100 ms limit.
     let (b, e) = s.capture.as_ref().unwrap().read().sample_range().unwrap();
-    assert_eq!(s.trigger, Some(CaptureTime::from_sample(RATE / 1000, RATE)));
-    assert!((RATE * 81 / 1000..=RATE / 10).contains(&(e - b)), "{} samples", e - b);
+    assert_eq!(s.trigger, Some(CaptureTime::from_sample(RATE / 50, RATE)));
+    assert_eq!(e - b, RATE / 10, "20 ms before the trigger and 80 ms after");
 }
 
 /// Devices that record into their own memory show no progress
@@ -232,4 +239,26 @@ fn no_progress_card_on_buffered_devices() {
     assert!(r.h.query_by_label("Memory").is_none(), "no progress card");
     let status = r.h.query_by_label_contains("Waiting").is_some() || r.h.query_by_label_contains("Triggered").is_some();
     assert!(status, "the toolbar status");
+}
+
+/// A capture its analog channels may not fit the buffer for says so at
+/// Start; one that fits does not.
+#[test]
+fn warns_when_the_buffer_is_small() {
+    let mut r = Rig::new(MockOptions::default());
+    pick_mode(&mut r.h, "Trigger");
+    let warned = |r: &Rig| r.h.state().toasts().iter().any(|t| t.body.contains("may not fit the memory buffer"));
+    // Two analog channels at 8 MS/s for 1.1 s: about 176 MB.
+    r.h.state_mut().session_mut().unwrap().settings.buffer_mb = 256;
+    r.h.key_press(Key::Space);
+    r.until(|a| a.session().unwrap().state == CaptureState::Recording);
+    assert!(!warned(&r));
+    r.h.key_press(Key::Space);
+    r.until(|a| !a.session().unwrap().state.is_busy());
+    r.h.state_mut().session_mut().unwrap().settings.buffer_mb = 128;
+    r.h.key_press(Key::Space);
+    r.until(|a| a.session().unwrap().state == CaptureState::Recording);
+    let toasts = r.h.state().toasts();
+    let t = toasts.iter().find(|t| t.body.contains("may not fit the memory buffer")).expect("the warning");
+    assert!(t.body.contains("about 0.17 GB, the buffer is 0.12 GB"), "{}", t.body);
 }

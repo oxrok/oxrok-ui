@@ -42,7 +42,7 @@ fn rig() -> Option<MutexGuard<'static, Rig>> {
 }
 
 fn trigger(matches: &[(ChannelId, TriggerMatch)], pre: u8) -> HwTrigger {
-    HwTrigger { matches: matches.to_vec(), pulse_samples: None, pre_trigger_percent: pre }
+    HwTrigger::one_stage(matches.to_vec(), pre)
 }
 
 fn no_stimulus() {}

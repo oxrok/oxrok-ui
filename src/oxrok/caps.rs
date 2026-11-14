@@ -283,9 +283,20 @@ pub(crate) fn trigger_caps(dev: &dyn Device, capture_ratio: bool) -> Option<HwTr
             .collect(),
         _ => Vec::new(),
     };
-    let features = dev.trigger_features();
-    let pulse = features.duration && features.pulse;
-    (!matches.is_empty()).then_some(HwTriggerCaps { matches, capture_ratio, pulse })
+    let f = dev.trigger_features();
+    (!matches.is_empty()).then_some(HwTriggerCaps {
+        matches,
+        capture_ratio,
+        pulse: f.duration && f.pulse,
+        max_stages: f.max_stages,
+        count: f.count,
+        consecutive: f.count && f.consecutive,
+        duration: f.duration,
+        range: f.range,
+        or: f.or,
+        and: f.and,
+        holdoff: f.holdoff,
+    })
 }
 
 /// Everything the settings panel needs, except the

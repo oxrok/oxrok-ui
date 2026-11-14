@@ -12,7 +12,7 @@ use std::collections::BTreeMap;
 use std::time::Duration;
 
 fn trigger(matches: &[(ChannelId, TriggerMatch)], pre: u8) -> HwTrigger {
-    HwTrigger { matches: matches.to_vec(), pulse_samples: None, pre_trigger_percent: pre }
+    HwTrigger::one_stage(matches.to_vec(), pre)
 }
 
 /// Decodes `c` with `decoder`, roles mapped to captured channels.

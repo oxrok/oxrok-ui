@@ -23,11 +23,8 @@ fn pre_trigger_matrix() {
                     continue;
                 }
                 let (limit, pct) = oxrok_ui::app::buffered_trigger_plan(pre, post, rate);
-                let mut spec = CaptureSpec::new(rate, &[D0, D1, D2]).trigger(HwTrigger {
-                    matches: vec![(D0, TriggerMatch::Rising)],
-                    pulse_samples: None,
-                    pre_trigger_percent: pct,
-                });
+                let mut spec = CaptureSpec::new(rate, &[D0, D1, D2])
+                    .trigger(HwTrigger::one_stage(vec![(D0, TriggerMatch::Rising)], pct));
                 spec.samples = limit;
                 spec.rle = rle;
                 let t0 = Instant::now();

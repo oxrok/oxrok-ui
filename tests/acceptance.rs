@@ -17,7 +17,8 @@ use std::time::{Duration, Instant};
 /// Default mock rate (highest ≤ 10 MS/s).
 const RATE: u64 = 8_000_000;
 /// Window layout at 1280 × 800, Inspector open on the left.
-const LABEL_W: f32 = 105.0;
+/// The label column: 105 pt of label and the 22 pt of one trigger icon.
+const LABEL_W: f32 = 105.0 + 22.0;
 const INSPECTOR_W: f32 = 300.0;
 const PLOT_POINT: Pos2 = Pos2::new(500.0, 110.0);
 

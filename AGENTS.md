@@ -37,7 +37,8 @@ UPDATE_SNAPSHOTS=1 cargo test --features mock   # accept new kittest snapshots (
 
 - **Diagram:** every pull request description has a diagram of what the
   change does: the flow, the states or the structure it touches. Write it
-  as a Mermaid code block, which GitHub renders.
+  as an ASCII diagram in a code block, or as a Mermaid code block (GitHub
+  renders it) where that suits the change better.
 
 ## Local test hardware (this machine)
 

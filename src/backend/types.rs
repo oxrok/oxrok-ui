@@ -251,12 +251,37 @@ pub enum TriggerMatch {
     Edge,
 }
 
-#[derive(Clone, Debug, PartialEq, Eq)]
+/// What the device's own trigger takes.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+#[allow(clippy::struct_excessive_bools)]
 pub struct HwTriggerCaps {
     pub matches: Vec<TriggerMatch>,
     pub capture_ratio: bool,
     /// An edge can carry the width of the pulse it ends.
     pub pulse: bool,
+    /// The most stages, 0 for any number.
+    pub max_stages: usize,
+    /// A stage can fire on its Nth match.
+    pub count: bool,
+    /// The count can be of matches in a row.
+    pub consecutive: bool,
+    /// A stage of levels can have to hold for a while.
+    pub duration: bool,
+    /// A stage can compare a group of channels with a value range.
+    pub range: bool,
+    /// Two stages can combine with or.
+    pub or: bool,
+    /// Two stages can combine with and.
+    pub and: bool,
+    /// The trigger can be armed only after a number of samples.
+    pub holdoff: bool,
+}
+
+impl HwTriggerCaps {
+    /// The stages the UI offers: A, and B when the device has it.
+    pub fn stages(&self) -> usize {
+        if self.max_stages == 1 { 1 } else { 2 }
+    }
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -318,16 +343,94 @@ pub enum AcquisitionLimit {
     Millis(u64),
 }
 
-/// The device's trigger: one stage, all matches must hold.
+/// How long a stage must hold, in samples, as oxrok's `TriggerDuration`:
+/// on a stage with one rising or falling edge the width of the pulse
+/// that edge ends, on a stage of levels (`Longer` only) how long they
+/// held.
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
+pub enum HwDuration {
+    /// More than this many samples.
+    Longer(u64),
+    /// Fewer than this many samples.
+    Shorter(u64),
+    /// Both ends inclusive.
+    Between(u64, u64),
+}
+
+impl HwDuration {
+    /// The widths in samples that qualify, both ends inclusive.
+    pub fn bounds(self) -> (u64, u64) {
+        match self {
+            HwDuration::Longer(n) => (n.saturating_add(1), u64::MAX),
+            HwDuration::Shorter(n) => (1, n.saturating_sub(1)),
+            HwDuration::Between(min, max) => (min, max),
+        }
+    }
+}
+
+/// A group of channels read as a number, least significant first.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct HwRange {
+    pub channels: Vec<ChannelId>,
+    /// Both bounds inclusive.
+    pub low: u64,
+    pub high: u64,
+    pub inside: bool,
+}
+
+/// One stage of the device's trigger: all matches must hold on the
+/// same sample.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct HwStage {
+    pub matches: Vec<(ChannelId, TriggerMatch)>,
+    /// Fire on the Nth match; `true` for matches in a row only.
+    pub count: Option<(u32, bool)>,
+    pub duration: Option<HwDuration>,
+    pub range: Option<HwRange>,
+}
+
+#[derive(Copy, Clone, Debug, Default, PartialEq, Eq)]
+pub enum HwCombine {
+    /// Each stage after the previous one.
+    #[default]
+    Sequence,
+    Or,
+    And,
+}
+
+/// The device's trigger.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct HwTrigger {
-    pub matches: Vec<(ChannelId, TriggerMatch)>,
-    /// The edge in `matches` must end a pulse this many samples wide, both
-    /// ends inclusive: a falling edge ends a high pulse, a rising edge a
-    /// low one. Needs [`HwTriggerCaps::pulse`].
-    pub pulse_samples: Option<(u64, u64)>,
+    pub stages: Vec<HwStage>,
+    /// How two stages combine.
+    pub combine: HwCombine,
     /// Share of the capture before the trigger, 0–100 % (`SR_CONF_CAPTURE_RATIO`).
     pub pre_trigger_percent: u8,
+    /// Samples the device takes before it arms the trigger, so that the
+    /// share before the trigger is there. Needs [`HwTriggerCaps::holdoff`].
+    pub holdoff: u64,
+}
+
+impl HwTrigger {
+    /// One stage of level and edge matches.
+    pub fn one_stage(matches: Vec<(ChannelId, TriggerMatch)>, pre_trigger_percent: u8) -> Self {
+        Self {
+            stages: vec![HwStage { matches, ..HwStage::default() }],
+            combine: HwCombine::Sequence,
+            pre_trigger_percent,
+            holdoff: 0,
+        }
+    }
+
+    /// The edge of the first stage must end a pulse `min` to `max`
+    /// samples wide, both ends inclusive. Needs [`HwTriggerCaps::pulse`].
+    #[must_use]
+    pub fn pulse(mut self, min: u64, max: u64) -> Self {
+        if let Some(s) = self.stages.first_mut() {
+            s.duration = Some(HwDuration::Between(min, max));
+        }
+        self
+    }
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]

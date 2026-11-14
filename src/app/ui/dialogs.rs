@@ -164,6 +164,7 @@ impl LaApp {
         self.table_export_dialog(ctx);
         self.connection_help_dialog(ctx);
         self.bus_dialog(ctx);
+        self.trigger_details_dialog(ctx);
         self.install_firmware_dialog(ctx);
         self.about_dialog(ctx);
         self.trim_dialog(ctx);

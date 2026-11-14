@@ -2,8 +2,8 @@
 
 use crate::app::session::Session;
 use crate::backend::{ConfValue, DeviceCaps, ThresholdChoice};
+use crate::core::ChannelId;
 use crate::core::capture::CaptureMode;
-use crate::core::trigger::TriggerEvent;
 
 /// Shown broken at this width, copied as one line.
 pub const WRAP: usize = 80;
@@ -98,6 +98,75 @@ fn threshold(t: &ThresholdChoice, caps: Option<&DeviceCaps>) -> String {
     }
 }
 
+/// `t` in the `-t` grammar: `,` between the conditions of a stage; `;`,
+/// `|` or `&` between stages; `*N` and `*Nc` counts; `>a`, `<b` and
+/// `>a<b` durations in samples, both ends strict; `First-Last=lo..hi`
+/// value ranges. `name` is what `-C` calls a channel, `position` its
+/// place among the device's channels. The error says what the grammar
+/// has no words for.
+pub(crate) fn trigger_spec(
+    t: &crate::backend::HwTrigger,
+    name: impl Fn(ChannelId) -> Option<String>,
+    position: impl Fn(ChannelId) -> Option<usize>,
+) -> Result<String, String> {
+    use crate::backend::{HwCombine, HwDuration, TriggerMatch};
+    let name = |id: ChannelId| {
+        let n = name(id).ok_or_else(|| format!("no channel {}", id.short_name()))?;
+        // These would read as part of the grammar.
+        if n.is_empty() || n.contains(['-', ',', '=', ';', '|', '&', '*', '<', '>']) {
+            return Err(format!("the channel name \"{n}\""));
+        }
+        Ok(n)
+    };
+    let mut stages = Vec::new();
+    for s in &t.stages {
+        let modifier = match (s.count, s.duration) {
+            (Some((n, consecutive)), _) => format!("*{n}{}", if consecutive { "c" } else { "" }),
+            (None, Some(HwDuration::Longer(n))) => format!(">{n}"),
+            (None, Some(HwDuration::Shorter(n))) => format!("<{n}"),
+            (None, Some(HwDuration::Between(min, max))) => {
+                format!(">{}<{}", min.saturating_sub(1), max.saturating_add(1))
+            }
+            (None, None) => String::new(),
+        };
+        // The modifier is the stage's; it reads best on its edge.
+        let is_edge = |m: &TriggerMatch| !matches!(m, TriggerMatch::Zero | TriggerMatch::One);
+        let carrier = s.matches.iter().position(|(_, m)| is_edge(m)).unwrap_or(0);
+        let mut tokens = Vec::new();
+        for (k, (c, m)) in s.matches.iter().enumerate() {
+            let code = match m {
+                TriggerMatch::Zero => '0',
+                TriggerMatch::One => '1',
+                TriggerMatch::Rising => 'r',
+                TriggerMatch::Falling => 'f',
+                TriggerMatch::Edge => 'e',
+            };
+            tokens.push(format!("{}={code}{}", name(*c)?, if k == carrier { modifier.as_str() } else { "" }));
+        }
+        if tokens.is_empty() && !modifier.is_empty() {
+            return Err("a count or duration on a value range alone".into());
+        }
+        if let Some(r) = &s.range {
+            // By the device's order, first to last, the first the least
+            // significant.
+            let at = r.channels.iter().map(|c| position(*c)).collect::<Option<Vec<_>>>();
+            let contiguous = at.is_some_and(|p| p.windows(2).all(|w| w[1] == w[0] + 1));
+            let (Some(first), Some(last), true) = (r.channels.first(), r.channels.last(), contiguous) else {
+                return Err("a value range on channels that are not neighbours".into());
+            };
+            let values = if r.low == r.high { r.low.to_string() } else { format!("{}..{}", r.low, r.high) };
+            tokens.push(format!("{}-{}={}{values}", name(*first)?, name(*last)?, if r.inside { "" } else { "!" }));
+        }
+        stages.push(tokens.join(","));
+    }
+    let sep = match t.combine {
+        HwCombine::Sequence => ";",
+        HwCombine::Or => "|",
+        HwCombine::And => "&",
+    };
+    Ok(stages.join(sep))
+}
+
 impl Session {
     /// A session opened from a file uses its capture snapshot.
     pub fn cli_command(&self) -> CliCommand {
@@ -153,16 +222,16 @@ impl Session {
             device.push(threshold(t, caps));
         }
         // The device's own trigger, where the app arms it too.
-        let device_trigger = (st.mode == CaptureMode::Triggered)
-            .then(|| crate::app::hw_trigger_for(&st.trigger, caps, 0, st.sample_rate))
+        let lowered = (st.mode == CaptureMode::Triggered)
+            .then(|| crate::app::trigger::lower(&st.trigger, st.sample_rate, 0).ok())
             .flatten();
-        let triggered = st.mode == CaptureMode::Triggered;
-        let buffered = caps.is_some_and(|c| !c.supports_continuous);
-        let ratio_set = caps.and_then(|c| c.hw_trigger.as_ref()).is_some_and(|t| t.capture_ratio);
+        let device_trigger = crate::app::plan_trigger(&st.trigger, caps, 0, st.sample_rate)
+            .ok()
+            .filter(|e| lowered.is_some() && e.device().is_some());
         // A device that waits for the trigger records one stretch around
         // it: the app's sample limit, and the share of it before the
         // trigger. `--time` would be a limit on the whole capture.
-        let waits = triggered && (buffered || (device_trigger.is_some() && ratio_set));
+        let waits = st.mode == CaptureMode::Triggered && crate::app::waits_in_device(&st.trigger, caps, st.sample_rate);
         let (limit, ratio) = crate::app::buffered_trigger_plan(
             st.trigger.pre_trigger_seconds,
             st.trigger.post_trigger_seconds,
@@ -191,27 +260,26 @@ impl Session {
             CaptureMode::Timed => words.extend(["--time".into(), ms(st.timer_seconds)]),
             CaptureMode::Triggered => {
                 let t = &st.trigger;
-                let mut conds = Vec::new();
-                let name = cli_name;
-                if let Some(ch) = t.channel.and_then(name) {
-                    // A pulse is the edge that ends it, with the widths
-                    // in samples; both ends of `>a<b` are strict.
-                    let width = device_trigger.as_ref().and_then(|d| d.pulse_samples);
-                    let edge = match t.event {
-                        TriggerEvent::Rising | TriggerEvent::NegativePulse => 'r',
-                        TriggerEvent::Falling | TriggerEvent::PositivePulse => 'f',
-                    };
-                    match (t.event.is_pulse(), width) {
-                        (false, _) => conds.push(format!("{ch}={edge}")),
-                        (true, Some((min, max))) => {
-                            conds.push(format!("{ch}={edge}>{}<{}", min - 1, max.saturating_add(1)));
+                if let Some(mut hw) = lowered {
+                    // Widths the device's trigger does not take are
+                    // the app's to find.
+                    if device_trigger.is_none() {
+                        for s in &mut hw.stages {
+                            if s.duration.take().is_some() {
+                                comment = Some("pulse trigger: evaluated in the app".to_owned());
+                            }
                         }
-                        (true, None) => comment = Some("pulse trigger: evaluated in the app".to_owned()),
                     }
-                }
-                conds.extend(t.linked.iter().filter_map(|&(c, high)| Some(format!("{}={}", name(c)?, high as u8))));
-                if !conds.is_empty() {
-                    words.extend(["-t".into(), quote(&conds.join(","))]);
+                    // The trigger is armed after the time to keep before
+                    // it; the command's fires on its first match.
+                    if device_trigger.as_ref().and_then(|e| e.device()).is_some_and(|hw| hw.holdoff > 0) {
+                        comment.get_or_insert_with(|| "the app arms the trigger after the pre-trigger time".to_owned());
+                    }
+                    let position = |id| d.channels.iter().position(|c| c.id == id);
+                    match trigger_spec(&hw, cli_name, position) {
+                        Ok(spec) => words.extend(["-t".into(), quote(&spec)]),
+                        Err(why) => comment = Some(format!("trigger not written: {why}")),
+                    }
                 }
                 if waits {
                     words.extend(["--samples".into(), limit.to_string()]);
@@ -252,5 +320,90 @@ mod tests {
         assert_eq!(w, "oxrok -d fx2lafw:conn=3.12 -C D0,D1,D2 -c samplerate=8m -t D0=r --time 1000 \\\n  -o cap.sr");
         assert!(w.lines().all(|l| l.len() <= WRAP));
         assert_eq!(c.one_line().lines().count(), 1);
+    }
+    /// The trigger in the `-t` grammar, and oxrok's own parser reading
+    /// each line back as the trigger that was written.
+    #[test]
+    fn trigger_grammar() {
+        use crate::app::trigger::lower;
+        use crate::core::trigger::{Combine, DigitalTrigger, Hold, Match, Stage, StageCount, ValueRange};
+        const D: fn(u16) -> ChannelId = ChannelId::digital;
+        let mut registry = ::oxrok::core::Registry::new();
+        ::oxrok::register_all(&mut registry);
+        let demo = registry.find("demo").unwrap().scan(&[]).unwrap().remove(0);
+        let name = |c: ChannelId| Some(c.short_name());
+        let position = |c: ChannelId| Some(c.index as usize);
+        let rate = 1_000_000;
+
+        let edge = {
+            let mut t = DigitalTrigger::on(D(0), Match::Rising);
+            t.set(0, D(1), Some(Match::High));
+            t.set(0, D(2), Some(Match::Low));
+            t
+        };
+        let pulse = {
+            let mut t = DigitalTrigger::pulse(D(3), true, 8e-6, 16e-6);
+            t.set(0, D(5), Some(Match::High));
+            t
+        };
+        let counted = {
+            let mut t = DigitalTrigger::on(D(0), Match::Rising);
+            t.set(1, D(0), Some(Match::High));
+            t.set(1, D(1), Some(Match::Falling));
+            t.stages[1].count = Some(StageCount { n: 3, consecutive: true });
+            t
+        };
+        let held = {
+            let mut t = DigitalTrigger::on(D(0), Match::High);
+            t.set(0, D(1), Some(Match::Low));
+            t.stages[0].hold = Some(Hold::Longer(50e-6));
+            t
+        };
+        let range = |inside, low, high| ValueRange { channels: vec![D(4), D(5), D(6), D(7)], low, high, inside };
+        let ranged = {
+            let mut t = DigitalTrigger::on(D(0), Match::Edge);
+            t.stages[0].range = Some(range(true, 3, 9));
+            t.stages[1] = Stage { range: Some(range(false, 5, 5)), ..Stage::default() };
+            t
+        };
+        let either = |combine| {
+            let mut t = DigitalTrigger::on(D(0), Match::Edge);
+            t.set(1, D(1), Some(Match::Rising));
+            DigitalTrigger { combine, ..t }
+        };
+        let long = {
+            let mut t = DigitalTrigger::on(D(2), Match::Falling);
+            t.stages[0].hold = Some(Hold::Longer(10e-6));
+            t.set(1, D(2), Some(Match::Rising));
+            t.stages[1].hold = Some(Hold::Shorter(4e-6));
+            t
+        };
+        for (t, want) in [
+            (edge, "D0=r,D1=1,D2=0"),
+            (pulse, "D3=f>7<17,D5=1"),
+            (counted, "D0=r;D0=1,D1=f*3c"),
+            (held, "D0=1>50,D1=0"),
+            (ranged, "D0=e,D4-D7=3..9;D4-D7=!5"),
+            (either(Combine::Or), "D0=e|D1=r"),
+            (either(Combine::And), "D0=e&D1=r"),
+            (long, "D2=f>10;D2=r<4"),
+        ] {
+            let hw = lower(&t, rate, 0).unwrap();
+            assert_eq!(trigger_spec(&hw, name, position).as_deref(), Ok(want), "{t:?}");
+            let read = ::oxrok::core::trigger_syntax::parse(demo.as_ref(), want).unwrap();
+            assert_eq!(read, crate::oxrok::trigger::to_oxrok(&hw, position).unwrap(), "{want}");
+        }
+
+        // What the grammar has no words for.
+        let spec = |t: &DigitalTrigger| trigger_spec(&lower(t, rate, 0).unwrap(), name, position);
+        let mut alone = DigitalTrigger::default();
+        alone.stages[0] = Stage { range: Some(range(true, 1, 2)), hold: Some(Hold::Longer(5e-6)), ..Stage::default() };
+        assert!(spec(&alone).unwrap_err().contains("value range alone"));
+        let mut apart = DigitalTrigger::default();
+        apart.stages[0].range = Some(ValueRange { channels: vec![D(1), D(3)], low: 0, high: 3, inside: true });
+        assert!(spec(&apart).unwrap_err().contains("not neighbours"));
+        let hw = lower(&DigitalTrigger::on(D(0), Match::Rising), rate, 0).unwrap();
+        let renamed = |_| Some("CLK-A".to_owned());
+        assert!(trigger_spec(&hw, renamed, position).unwrap_err().contains("CLK-A"));
     }
 }

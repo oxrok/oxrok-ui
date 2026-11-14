@@ -153,8 +153,12 @@ pub struct Session {
     pub capture_done: std::sync::Arc<std::sync::atomic::AtomicBool>,
     /// The trigger time of the current capture, once found.
     pub trigger: Option<CaptureTime>,
-    /// The software trigger scanning the current capture.
+    /// The software trigger scanning the current capture, where it can
+    /// look for the trigger.
     pub scanner: Option<crate::engine::trigger::TriggerScanner>,
+    /// Whether `scanner` is made for the current capture: it is once the
+    /// data says the sample rate the device took.
+    pub scanner_planned: bool,
     /// The `.oxrok` this session saves to, once it has one.
     pub file: Option<std::path::PathBuf>,
     /// Opened from a file (any format), so the samples are
@@ -260,6 +264,7 @@ impl Session {
             capture_done: Default::default(),
             trigger: None,
             scanner: None,
+            scanner_planned: false,
             file: None,
             opened_from: None,
             notes: String::new(),
@@ -853,6 +858,7 @@ impl Session {
         self.origin = self.origin.for_capture_start(triggered);
         self.trigger = None;
         self.scanner = None;
+        self.scanner_planned = false;
     }
 
     pub fn digital_enabled(&self) -> impl Iterator<Item = ChannelId> + '_ {

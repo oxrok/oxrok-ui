@@ -1,6 +1,6 @@
 [package]
 name = "oxrok-ui"
-version = "0.2.0"
+version = "0.3.0-alpha.1"
 edition = "2024"
 rust-version = "1.95"
 # Decided 2026-10-19: GPL-3.0-or-later, matching the sigrok stack it ports.
@@ -46,10 +46,9 @@ pollster = "1"
 log = { version = "0.4", features = ["std"] }
 # Pure Rust, with RustPython built in, so no C library and no Python
 # installation are needed.
-# From oxrok until its next release: the software triggers with value
-# ranges, or/and and pulse widths, matched a word of samples at a time,
-# and the trigger hold-off (oxrok pull request 110).
-oxrok = { git = "https://github.com/oxrok/oxrok", rev = "e7143e9d4b62f7c8fac61cf065968eba838f558c", default-features = false, features = ["nusb", "rustpython"] }
+# The commit of oxrok 0.3.0-alpha.1, until that version is on crates.io;
+# then `version = "=0.3.0-alpha.1"`, which crates.io needs of a dependency.
+oxrok = { git = "https://github.com/oxrok/oxrok", rev = "32ba4f60b98de34a8fff85e3f229c852371ba101", default-features = false, features = ["nusb", "rustpython"] }
 # The firmware registry: downloads what a device is missing over HTTPS
 # (ureq, rustls), or takes it from the vendor's software.
 oxrok-firmware-fetch = "0.2"

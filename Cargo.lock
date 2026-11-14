@@ -3511,8 +3511,8 @@ dependencies = [
 
 [[package]]
 name = "oxrok"
-version = "0.2.0"
-source = "git+https://github.com/oxrok/oxrok?rev=e7143e9d4b62f7c8fac61cf065968eba838f558c#e7143e9d4b62f7c8fac61cf065968eba838f558c"
+version = "0.3.0-alpha.1"
+source = "git+https://github.com/oxrok/oxrok?rev=32ba4f60b98de34a8fff85e3f229c852371ba101#32ba4f60b98de34a8fff85e3f229c852371ba101"
 dependencies = [
  "aes",
  "async-hid",
@@ -3564,7 +3564,7 @@ dependencies = [
 
 [[package]]
 name = "oxrok-ui"
-version = "0.2.0"
+version = "0.3.0-alpha.1"
 dependencies = [
  "chrono",
  "crossbeam-channel",

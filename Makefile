@@ -152,8 +152,8 @@ bundle:
 	python3 packaging/macos/bundle.py --bin "$(TARGET_DIR)/release/oxrok-ui" --cli "$(TARGET_DIR)/release/oxrok" --version $(VERSION) --out dist $(if $(SIGN_IDENTITY),--sign "$(SIGN_IDENTITY)") \
 		$(if $(NOTARY_PROFILE),--notary-profile "$(NOTARY_PROFILE)") \
 		$(if $(NOTARY_KEY),--notary-key "$(NOTARY_KEY)" --notary-key-id "$(NOTARY_KEY_ID)" --notary-issuer "$(NOTARY_ISSUER)")
-	"dist/Oxrok UI.app/Contents/MacOS/oxrok-ui" --self-test
-	"dist/Oxrok UI.app/Contents/MacOS/oxrok" --version | head -n 1
+	dist/Oxrok.app/Contents/MacOS/oxrok-ui --self-test
+	dist/Oxrok.app/Contents/MacOS/oxrok --version | head -n 1
 
 # The performance budgets, timed in release.
 perf:

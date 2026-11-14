@@ -98,7 +98,7 @@ make run                           # the app on oxrok (release; PROFILE=dev for 
 ## Packages
 
 - **macOS:** `make firmware-deps` once, then `make bundle` writes an
-  ad-hoc signed `Oxrok UI.app` and a `.dmg` to `dist/`.
+  ad-hoc signed `Oxrok.app` and a `.dmg` to `dist/`.
   - It carries the Python decoders and the open firmware (oxrok and
     RustPython are in the binary).
   - It ends with the app's `--self-test`.

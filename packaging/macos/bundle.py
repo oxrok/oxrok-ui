@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Builds "Oxrok UI.app" from a release binary (22 Packaging, macOS).
+"""Builds Oxrok.app from a release binary (22 Packaging, macOS).
 
 oxrok and RustPython are in the binary, so there are no libraries to copy.
 Resources: the decoders of a libsigrokdecode installation (oxrok runs them
@@ -38,7 +38,10 @@ import subprocess
 import sys
 from pathlib import Path
 
+# The app's name, as it calls itself in its menus and windows.
 APP_NAME = "Oxrok UI"
+# The bundle in dist/, in the .dmg and in /Applications.
+BUNDLE = "Oxrok.app"
 BUNDLE_ID = "org.oxrok.ui"
 
 
@@ -153,7 +156,7 @@ def package(a, app):
     sign(app, a.sign)
     if creds:
         # The app first, so that the one in the .dmg has its ticket.
-        zipped = a.out / f"{APP_NAME}.zip"
+        zipped = (a.out / BUNDLE).with_suffix(".zip")
         run("ditto", "-c", "-k", "--keepParent", str(app), str(zipped))
         try:
             notarize(zipped, creds)
@@ -202,7 +205,7 @@ def main():
     if a.stage == "app" and (a.sign or notary):
         ap.error("--stage app signs ad-hoc; --sign and the notary options are for the package")
 
-    app = a.out / f"{APP_NAME}.app"
+    app = a.out / BUNDLE
     if a.stage != "package":
         assemble(a, app)
     elif not app.is_dir():

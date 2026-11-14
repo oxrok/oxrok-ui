@@ -56,7 +56,7 @@ jobs:
       # For macos-sign: the app as `make bundle` left it. A tar, as an
       # artifact's zip loses the file modes.
       - if: github.repository_owner == 'oxrok'
-        run: tar -C dist -cf macos-app.tar "Oxrok UI.app"
+        run: tar -C dist -cf macos-app.tar Oxrok.app
       - if: github.repository_owner == 'oxrok'
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
@@ -177,7 +177,7 @@ jobs:
           dmg=$(ls dmg/*.dmg)
           xcrun stapler validate "$dmg"
           hdiutil attach -nobrowse -readonly -mountpoint "$RUNNER_TEMP/dmg" "$dmg"
-          app="$RUNNER_TEMP/dmg/Oxrok UI.app"
+          app="$RUNNER_TEMP/dmg/Oxrok.app"
           xcrun stapler validate "$app"
           codesign --verify --strict --deep --verbose=2 "$app"
           codesign --verify --strict --check-notarization -R=notarized "$app"

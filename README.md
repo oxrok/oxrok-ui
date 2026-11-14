@@ -102,10 +102,16 @@ make run                           # the app on oxrok (release; PROFILE=dev for 
   - It carries the Python decoders and the open firmware (oxrok and
     RustPython are in the binary).
   - It ends with the app's `--self-test`.
+  - For a release, `SIGN_IDENTITY` (a Developer ID Application identity)
+    signs it with the hardened runtime, and `NOTARY_PROFILE` (a keychain
+    profile of `xcrun notarytool store-credentials`) has Apple notarize
+    the app and the `.dmg`.
 - **Linux and Windows:** `packaging/linux/appimage.sh` (AppImage) and
   `packaging/windows/build.sh` (MSYS2 + Inno Setup).
 - **CI:** the *Package* workflow (Actions → Package → Run workflow)
   builds all three, runs `--self-test` on each and uploads them.
+  - The macOS `.dmg` is signed with the Developer ID certificate and
+    notarized, in a job of its own that holds the keys.
 
 ## Using it
 

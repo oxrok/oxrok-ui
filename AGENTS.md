@@ -18,7 +18,7 @@ make check         # rustfmt + clippy -D warnings, as in CI
 make screenshots   # regenerate docs/screenshots (README)
 make firmware-deps # the fx2lafw firmware into vendor/ (git-ignored)
 make notices       # regenerate the About dialog's third-party notices
-make bundle        # macOS .app + .dmg in dist/ (ad-hoc signed); packaging/ has Linux and Windows
+make bundle        # macOS .app + .dmg in dist/ (ad-hoc signed; SIGN_IDENTITY and NOTARY_PROFILE for a release); packaging/ has Linux and Windows
 make perf          # the performance budgets, in release
 UPDATE_SNAPSHOTS=1 cargo test --features mock   # accept new kittest snapshots (look at them first)
 ```

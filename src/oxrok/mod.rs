@@ -473,10 +473,24 @@ fn set_trigger(
 }
 
 /// The limit through whichever key the device has.
+///
+/// A device whose stream mode is a setting (`continuous`: DSLogic, Kingst
+/// LA) keeps it from one capture to the next. A capture that waits for
+/// the device's trigger leaves it for the device's memory, as after
+/// opening: a stream there keeps less before the trigger (DSLogic) or
+/// has no trigger at all (Kingst). A device that only streams refuses,
+/// and streams its limit.
 fn set_limit(dev: &mut dyn OxDevice, plan: &AcquisitionPlan, rate: u64) -> Result<(), BackendError> {
     let descs = dev.options(None).unwrap_or_default();
     let settable = |id: &str| descs.iter().any(|o| o.key.id() == id && o.access.set);
     let set = |dev: &mut dyn OxDevice, key: Key, v: Value| dev.set(&key, &v, None).map_err(device_error);
+    if plan.trigger.is_some()
+        && plan.limit != AcquisitionLimit::Continuous
+        && settable("continuous")
+        && dev.get(&Key::Continuous, None).ok().and_then(|v| v.as_bool()) == Some(true)
+    {
+        let _ = dev.set(&Key::Continuous, &Value::Bool(false), None);
+    }
     match plan.limit {
         AcquisitionLimit::Samples(n) => set(dev, Key::LimitSamples, Value::U64(n)),
         AcquisitionLimit::Millis(ms) if settable("limit_time") => set(dev, Key::LimitMsec, Value::U64(ms)),
@@ -593,6 +607,121 @@ fn feed(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use oxrok::core::{Access, Channel, DeviceClass, OptionDesc, ValueList};
+
+    /// A device with a stream mode that is a setting, as the DSLogic's.
+    struct Streams {
+        info: oxrok::core::DeviceInfo,
+        continuous: bool,
+        /// The device has no memory: it can't leave its stream mode.
+        only_streams: bool,
+        sets: Vec<(String, Value)>,
+    }
+
+    impl Streams {
+        fn new(continuous: bool, only_streams: bool) -> Self {
+            let info = oxrok::core::DeviceInfo {
+                driver: "test",
+                vendor: String::new(),
+                model: String::new(),
+                version: String::new(),
+                serial: String::new(),
+                conn: None,
+            };
+            Self { info, continuous, only_streams, sets: Vec::new() }
+        }
+    }
+
+    impl OxDevice for Streams {
+        fn info(&self) -> &oxrok::core::DeviceInfo {
+            &self.info
+        }
+        fn classes(&self) -> &[DeviceClass] {
+            &[]
+        }
+        fn channels(&self) -> &[Channel] {
+            &[]
+        }
+        fn enable_channel(&mut self, _: usize, _: bool) -> oxrok::core::Result<()> {
+            Ok(())
+        }
+        fn rename_channel(&mut self, _: usize, _: &str) -> oxrok::core::Result<()> {
+            Ok(())
+        }
+        fn options(&self, _: Option<&str>) -> oxrok::core::Result<Vec<OptionDesc>> {
+            Ok(vec![
+                OptionDesc::new(Key::Continuous, Access::GET_SET),
+                OptionDesc::new(Key::LimitSamples, Access::GET_SET),
+            ])
+        }
+        fn get(&self, key: &Key, _: Option<&str>) -> oxrok::core::Result<Value> {
+            match key {
+                Key::Continuous => Ok(Value::Bool(self.continuous)),
+                other => Err(oxrok::core::Error::UnknownKey(other.id().to_owned())),
+            }
+        }
+        fn set(&mut self, key: &Key, value: &Value, _: Option<&str>) -> oxrok::core::Result<()> {
+            if *key == Key::Continuous {
+                let on = value.as_bool().unwrap();
+                if self.only_streams && !on {
+                    return Err(oxrok::core::Error::arg("this model only streams"));
+                }
+                self.continuous = on;
+            }
+            self.sets.push((key.id().to_owned(), value.clone()));
+            Ok(())
+        }
+        fn list(&self, key: &Key, _: Option<&str>) -> oxrok::core::Result<ValueList> {
+            Err(oxrok::core::Error::UnknownKey(key.id().to_owned()))
+        }
+        fn start(&mut self, _: PacketSink) -> oxrok::core::Result<()> {
+            Ok(())
+        }
+        fn stop(&mut self) -> oxrok::core::Result<()> {
+            Ok(())
+        }
+    }
+
+    /// The stream mode a Continuous capture left on would take the
+    /// device's trigger with it (Kingst), or most of the pre-trigger
+    /// data (DSLogic).
+    #[test]
+    fn a_capture_that_waits_for_the_trigger_leaves_stream_mode() {
+        let trigger = HwTrigger {
+            matches: vec![(ChannelId::digital(0), TriggerMatch::Rising)],
+            pulse_samples: None,
+            pre_trigger_percent: 10,
+        };
+        let waits = AcquisitionPlan { trigger: Some(trigger), ..AcquisitionPlan::new(AcquisitionLimit::Samples(1000)) };
+        let limit = ("limit_samples".to_owned(), Value::U64(1000));
+
+        let mut dev = Streams::new(true, false);
+        set_limit(&mut dev, &waits, 1_000_000).unwrap();
+        assert!(!dev.continuous);
+        assert_eq!(dev.sets, [("continuous".to_owned(), Value::Bool(false)), limit.clone()]);
+
+        // Already in its memory mode: nothing to set.
+        let mut dev = Streams::new(false, false);
+        set_limit(&mut dev, &waits, 1_000_000).unwrap();
+        assert_eq!(dev.sets.as_slice(), std::slice::from_ref(&limit));
+
+        // A model with no memory refuses: the capture goes on, streamed.
+        let mut dev = Streams::new(true, true);
+        set_limit(&mut dev, &waits, 1_000_000).unwrap();
+        assert!(dev.continuous);
+        assert_eq!(dev.sets.as_slice(), std::slice::from_ref(&limit));
+
+        // A timed capture has no trigger to lose: the mode stays.
+        let mut dev = Streams::new(true, false);
+        set_limit(&mut dev, &AcquisitionPlan::new(AcquisitionLimit::Samples(1000)), 1_000_000).unwrap();
+        assert!(dev.continuous);
+        assert_eq!(dev.sets.as_slice(), std::slice::from_ref(&limit));
+
+        // Continuous switches it on.
+        let mut dev = Streams::new(false, false);
+        set_limit(&mut dev, &AcquisitionPlan::new(AcquisitionLimit::Continuous), 1_000_000).unwrap();
+        assert!(dev.continuous);
+    }
 
     /// A firmware error outside a scan (a capture start) is a missing
     /// file too, in the words of the log.

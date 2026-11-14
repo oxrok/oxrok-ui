@@ -17,7 +17,9 @@ pub enum WorkerCmd {
     Start {
         session: SessionId,
         config: DeviceConfig,
-        plan: AcquisitionPlan,
+        /// Made for the settings the device took: its sample rate may
+        /// not be the one asked for, and the plan counts in samples.
+        plan: Box<dyn FnOnce(&AppliedConfig) -> AcquisitionPlan + Send>,
         sink: Box<dyn SampleSink>,
     },
     Stop {
@@ -124,7 +126,7 @@ impl Worker {
                                 None => Err("device not open".to_owned()),
                                 Some(d) => d
                                     .apply(&config)
-                                    .and_then(|applied| d.start(plan, sink).map(|()| applied))
+                                    .and_then(|applied| d.start(plan(&applied), sink).map(|()| applied))
                                     .map_err(|e| e.to_string()),
                             };
                             Some(WorkerEvent::Started { session, result })

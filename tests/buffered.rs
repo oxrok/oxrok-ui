@@ -117,6 +117,20 @@ fn with_compression_the_whole_duration_is_recorded() {
     assert!(h.state().toasts().iter().all(|t| t.heading.as_deref() != Some("Capture ended early")));
 }
 
+/// A device may round the sample rate asked for. The capture is sized
+/// for the rate it took, so the timer is the time recorded.
+#[test]
+fn the_timer_counts_at_the_rate_the_device_took() {
+    let (mut h, clock) = rig();
+    open(&mut h);
+    // The mock has 4 and 8 MS/s, and takes 7 MS/s as 8.
+    h.state_mut().session_mut().unwrap().settings.sample_rate = 7_000_000;
+    record(&mut h, &clock);
+    assert!(h.state().toasts().iter().any(|t| t.body.starts_with("Sample rate adjusted to")));
+    assert_eq!(samples(&h), RATE, "1 s at 8 MS/s");
+    assert!(h.state().toasts().iter().all(|t| t.heading.as_deref() != Some("Capture ended early")));
+}
+
 #[test]
 fn streaming_devices_keep_looping_and_have_no_switch() {
     let clock = ManualClock::new();

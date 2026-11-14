@@ -126,6 +126,9 @@ fn pulse_trigger_waits_in_the_device() {
     h.run();
     let cli = h.state().session().unwrap().cli_command().one_line();
     assert!(cli.contains(r#"-t "D3=f>8<16,D5=1""#) && cli.contains("captureratio=17"), "{cli}");
+    // The sample limit of the app's own plan, not a time limit: the
+    // device waits for the trigger however long it takes.
+    assert!(cli.contains("--samples 60241") && !cli.contains("--time"), "{cli}");
 
     // No such pulse: the device keeps waiting, and Stop leaves nothing.
     h.key_press(Key::Space);

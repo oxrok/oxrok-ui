@@ -499,6 +499,7 @@ impl crate::backend::Device for OxrokDevice {
             return Err(BackendError::Busy);
         }
         let channels = self.channels.clone();
+        let driver = self.info.driver.clone();
         let dev = self.dev()?;
         let rate = dev.get(&Key::Samplerate, None).ok().and_then(|v| v.as_u64()).unwrap_or(0);
         set_limit(dev.as_mut(), &plan, rate)?;
@@ -506,6 +507,7 @@ impl crate::backend::Device for OxrokDevice {
         set_trigger(dev.as_mut(), plan.trigger.as_ref(), &channels)?;
 
         let header = header_of(dev.as_ref(), &channels, rate);
+        let span = analog_span(&driver, dev.as_ref());
         let analog: Vec<(usize, ChannelId)> = dev
             .channels()
             .iter()
@@ -520,7 +522,7 @@ impl crate::backend::Device for OxrokDevice {
         let stopped = stop.clone();
         let handle = std::thread::Builder::new()
             .name("oxrok-acquisition".into())
-            .spawn(move || feed(rx, sink, header, analog, stopped))
+            .spawn(move || feed(rx, sink, header, analog, span, stopped))
             .map_err(|e| BackendError::Device(e.to_string()))?;
         self.acquisition = Some(Acq { stop, handle });
         Ok(())
@@ -663,12 +665,64 @@ fn header_of(dev: &dyn OxDevice, channels: &[(ChannelId, usize)], rate: u64) -> 
     }
 }
 
+/// How many samples of the stream one analog value stands for.
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
+enum AnalogSpan {
+    /// One: the analog channels run at the sample rate.
+    Sample,
+    /// The device sends the average of every so many samples.
+    Samples(u64),
+    /// The device sends one average of the whole capture, at its end.
+    Capture,
+}
+
+/// The demo driver's *Averaging* sends fewer analog values than logic
+/// samples. Stored one after another they would end early, at a fraction
+/// of the capture. Other drivers use the same keys for averaging that
+/// keeps the sample count (an oscilloscope's waveform averaging).
+fn analog_span(driver: &str, dev: &dyn OxDevice) -> AnalogSpan {
+    let averaging = dev.get(&Key::Averaging, None).ok().and_then(|v| v.as_bool()) == Some(true);
+    if driver != "demo" || !averaging {
+        return AnalogSpan::Sample;
+    }
+    match dev.get(&Key::AvgSamples, None).ok().and_then(|v| v.as_u64()) {
+        Some(0) => AnalogSpan::Capture,
+        Some(n) if n > 1 => AnalogSpan::Samples(n),
+        _ => AnalogSpan::Sample,
+    }
+}
+
+/// Sends `values` to the sink, each held for `span` samples from `*pos`
+/// on, in blocks of bounded size.
+fn send_held(sink: &mut dyn SampleSink, id: ChannelId, pos: &mut u64, values: &[f32], span: u64) {
+    const BLOCK: usize = 1 << 16;
+    let mut block = Vec::with_capacity(BLOCK.min(values.len().saturating_mul(span as usize)));
+    for &v in values {
+        let mut left = span;
+        while left > 0 {
+            let n = left.min((BLOCK - block.len()) as u64) as usize;
+            block.resize(block.len() + n, v);
+            left -= n as u64;
+            if block.len() == BLOCK {
+                sink.on_analog(id, *pos, &block);
+                *pos += block.len() as u64;
+                block.clear();
+            }
+        }
+    }
+    if !block.is_empty() {
+        sink.on_analog(id, *pos, &block);
+        *pos += block.len() as u64;
+    }
+}
+
 /// The acquisition thread: oxrok packets → [`SampleSink`].
 fn feed(
     rx: std::sync::mpsc::Receiver<(usize, Packet)>,
     mut sink: Box<dyn SampleSink>,
     header: StreamHeader,
     analog: Vec<(usize, ChannelId)>,
+    span: AnalogSpan,
     stop: Arc<AtomicBool>,
 ) {
     let mut header = Some(header);
@@ -698,8 +752,19 @@ fn feed(
                     let Some(k) = a.channels.iter().position(|c| c == index) else { continue };
                     let mut column = Vec::with_capacity(n);
                     column.extend((0..n).map(|s| a.samples[s * columns + k]));
-                    sink.on_analog(*id, analog_pos[slot], &column);
-                    analog_pos[slot] += n as u64;
+                    match span {
+                        AnalogSpan::Sample => {
+                            sink.on_analog(*id, analog_pos[slot], &column);
+                            analog_pos[slot] += n as u64;
+                        }
+                        AnalogSpan::Samples(k) => send_held(sink.as_mut(), *id, &mut analog_pos[slot], &column, k),
+                        // Up to where the logic data is; one sample
+                        // without logic channels.
+                        AnalogSpan::Capture => {
+                            let k = pos.saturating_sub(analog_pos[slot]).max(1);
+                            send_held(sink.as_mut(), *id, &mut analog_pos[slot], &column, k);
+                        }
+                    }
                 }
             }
             Packet::Trigger => sink.on_hw_trigger(pos),
@@ -840,6 +905,41 @@ mod tests {
 
     /// A firmware error outside a scan (a capture start) is a missing
     /// file too, in the words of the log.
+    /// Averaged analog values are held for the samples they stand for,
+    /// one block after another.
+    #[test]
+    fn averaged_analog_values_are_held() {
+        type Blocks = Arc<Mutex<Vec<(u64, Vec<f32>)>>>;
+        struct Analog(Blocks);
+        impl SampleSink for Analog {
+            fn on_header(&mut self, _: StreamHeader) {}
+            fn on_logic(&mut self, _: u64, _: usize, _: &[u8]) {}
+            fn on_analog(&mut self, _: ChannelId, first: u64, volts: &[f32]) {
+                self.0.lock().push((first, volts.to_vec()));
+            }
+            fn on_hw_trigger(&mut self, _: u64) {}
+            fn on_frame(&mut self, _: bool) {}
+            fn on_end(&mut self, _: EndReason) {}
+        }
+        let got = Blocks::default();
+        let mut sink = Analog(got.clone());
+        let mut pos = 10;
+        send_held(&mut sink, ChannelId::analog(0), &mut pos, &[1.0, 2.0], 3);
+        assert_eq!(pos, 16);
+        assert_eq!(*got.lock(), [(10, vec![1.0, 1.0, 1.0, 2.0, 2.0, 2.0])]);
+
+        // A long hold goes out in blocks that follow on.
+        got.lock().clear();
+        send_held(&mut sink, ChannelId::analog(0), &mut pos, &[5.0], 150_000);
+        assert_eq!(pos, 150_016);
+        let blocks = got.lock();
+        assert_eq!(
+            blocks.iter().map(|(first, v)| (*first, v.len())).collect::<Vec<_>>(),
+            [(16, 65_536), (65_552, 65_536), (131_088, 18_928)]
+        );
+        assert!(blocks.iter().all(|(_, v)| v.iter().all(|x| *x == 5.0)));
+    }
+
     #[test]
     fn firmware_errors_are_recorded() {
         let e = device_error(oxrok::core::Error::Firmware("oxrok-test-start.rbf (install it)".into()));

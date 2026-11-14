@@ -312,3 +312,38 @@ fn read_current_state_by_short_captures() {
     assert_eq!(c.end, Some(EndReason::Completed));
     assert_eq!(c.ingest.as_ref().unwrap().next_sample(), 10_000);
 }
+
+/// The demo's *Averaging* sends one analog value per `avg_samples`
+/// samples, or one for the whole capture with 0. Either way the analog
+/// channel spans the capture, as the logic channels do.
+#[test]
+fn averaged_analog_spans_the_capture() {
+    let (backend, info) = demo();
+    let a0 = ChannelId::analog(0);
+    let run = |avg: u64| {
+        let mut dev = backend.open(&info.id).unwrap();
+        let mut cfg = DeviceConfig::new(vec![ChannelId::digital(0), a0], 100_000);
+        let options = cfg.options.entry(OptionScope::Device).or_default();
+        options.insert("averaging".into(), ConfValue::Bool(true));
+        options.insert("avg_samples".into(), ConfValue::UInt(avg));
+        let applied = dev.apply(&cfg).unwrap();
+        assert!(applied.rejected.is_empty(), "{:?}", applied.rejected);
+        let sink = Collect::default();
+        dev.start(AcquisitionPlan::new(AcquisitionLimit::Samples(10_000)), Box::new(sink.clone())).unwrap();
+        wait_end(&sink);
+        let c = sink.0.lock().unwrap();
+        assert_eq!(c.ingest.as_ref().unwrap().next_sample(), 10_000);
+        c.analog[&a0].clone()
+    };
+    // Every 4 samples: each value four times.
+    let held = run(4);
+    assert_eq!(held.len(), 10_000);
+    assert!(held.chunks(4).all(|c| c.iter().all(|v| *v == c[0])), "each average is held for its 4 samples");
+    assert!(held.chunks(4).any(|c| c[0] != held[0]), "the averages differ");
+    // 3 doesn't divide 10 000: the last sample has no average.
+    assert_eq!(run(3).len(), 9_999);
+    // One average of the whole capture.
+    let whole = run(0);
+    assert_eq!(whole.len(), 10_000);
+    assert!(whole.iter().all(|v| *v == whole[0]));
+}

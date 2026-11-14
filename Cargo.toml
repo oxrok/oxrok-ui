@@ -8,7 +8,7 @@ rust-version = "1.95"
 license = "GPL-3.0-or-later"
 description = "A Rust/egui logic analyzer, built on oxrok"
 repository = "https://github.com/oxrok/ui"
-homepage = "https://github.com/oxrok/ui"
+homepage = "https://oxrok.dev"
 
 [lib]
 path = "src/lib.rs"

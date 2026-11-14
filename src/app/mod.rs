@@ -382,11 +382,13 @@ pub(crate) fn analog_memory_mb(analog: usize, rate: u64, seconds: f64) -> f64 {
 /// whole percent) of a device that waits for the trigger, for `pre` and
 /// `post` seconds.
 /// The limit is sized so both parts are at least as long as asked after
-/// rounding the percentage.
+/// rounding the percentage; a time before the trigger is never rounded
+/// to none.
 pub fn buffered_trigger_plan(pre: f64, post: f64, rate: u64) -> (u64, u8) {
     let pre = (pre.max(0.0) * rate as f64).ceil();
     let post = (post.max(0.0) * rate as f64).ceil().max(1.0);
-    let ratio = (100.0 * pre / (pre + post)).round().clamp(0.0, 99.0);
+    let least = if pre > 0.0 { 1.0 } else { 0.0 };
+    let ratio = (100.0 * pre / (pre + post)).round().clamp(least, 99.0);
     let need_post = (post * 100.0 / (100.0 - ratio)).ceil();
     let need_pre = if ratio > 0.0 { (pre * 100.0 / ratio).ceil() } else { 0.0 };
     (need_post.max(need_pre) as u64, ratio as u8)
@@ -2028,7 +2030,9 @@ mod tests {
     fn buffered_trigger_sizing() {
         assert_eq!(buffered_trigger_plan(0.1, 0.9, 1_000_000), (1_000_000, 10));
         assert_eq!(buffered_trigger_plan(0.0, 1.0, 1_000), (1_000, 0));
-        for (pre, post) in [(0.0123, 0.5), (2e-3, 3e-3), (1.0, 1e-3), (0.3, 0.0)] {
+        // Under half a percent before the trigger is still one percent.
+        assert_eq!(buffered_trigger_plan(0.001, 1.0, 1_000_000), (1_010_102, 1));
+        for (pre, post) in [(0.0123, 0.5), (2e-3, 3e-3), (1.0, 1e-3), (0.3, 0.0), (1e-3, 1.0), (1e-6, 10.0)] {
             let rate = 100_000_000;
             let (limit, pct) = buffered_trigger_plan(pre, post, rate);
             let pre_got = limit * pct as u64 / 100;

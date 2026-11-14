@@ -1,6 +1,8 @@
-# 22 Packaging: builds the installers on demand (Actions → Package → Run
-# workflow). Each job runs the app's --self-test on the result and
-# uploads it as an artifact.
+# 22 Packaging: builds the installers, on demand (Actions → Package → Run
+# workflow) and for every published release. Each job runs the app's
+# --self-test on the result and uploads it as an artifact; for a release,
+# the attach job then puts the three packages on the release, each with a
+# .sha256.
 #
 # macOS, in the oxrok organization, is three jobs, so that the signing keys
 # are never in the job that runs the build (the crates' build scripts,
@@ -18,6 +20,9 @@
 name: Package
 
 on:
+  # A release builds all three; the inputs are for a run by hand.
+  release:
+    types: [published]
   workflow_dispatch:
     inputs:
       macos:
@@ -41,7 +46,7 @@ env:
 
 jobs:
   macos:
-    if: inputs.macos
+    if: github.event_name == 'release' || inputs.macos
     runs-on: macos-15
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -217,7 +222,7 @@ jobs:
           if-no-files-found: warn
 
   linux:
-    if: inputs.linux
+    if: github.event_name == 'release' || inputs.linux
     # The oldest supported runner, so the AppImage runs on older glibc.
     runs-on: ubuntu-22.04
     steps:
@@ -255,11 +260,14 @@ jobs:
           path: dist/*.AppImage
 
   windows:
-    if: inputs.windows
+    if: github.event_name == 'release' || inputs.windows
     runs-on: windows-latest
     defaults:
       run:
         shell: msys2 {0}
+    env:
+      SRD_VERSION: 0.5.3
+      SRD_SHA256: 65b4e6ce0519ffec0b1d61ff4beb8243ba68d1e02e3f92f2a34d9ab670e9236f
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -271,7 +279,14 @@ jobs:
           install: >-
             git make curl tar
             mingw-w64-x86_64-rust mingw-w64-x86_64-clang mingw-w64-x86_64-pkgconf
-            mingw-w64-x86_64-libsigrokdecode
+      # MSYS2 has no libsigrokdecode package. Only its decoders are needed,
+      # which are Python files: the release oxrok follows, by its hash.
+      - name: libsigrokdecode's decoders
+        run: |
+          curl -fsSL -o libsigrokdecode.tar.gz "https://github.com/sigrokproject/libsigrokdecode/archive/refs/tags/libsigrokdecode-$SRD_VERSION.tar.gz"
+          echo "$SRD_SHA256  libsigrokdecode.tar.gz" | sha256sum -c -
+          mkdir -p build
+          tar -xzf libsigrokdecode.tar.gz -C build
       - name: Inno Setup
         shell: pwsh
         run: choco install innosetup --no-progress -y
@@ -279,9 +294,56 @@ jobs:
       - name: Build, self-test and installer
         run: |
           export PATH="$PATH:/c/Program Files (x86)/Inno Setup 6"
+          export DECODERS="build/libsigrokdecode-libsigrokdecode-$SRD_VERSION/decoders"
           VERSION=$(sed -n 's/^version = "\(.*\)"/\1/p' Cargo.toml | head -1)
           packaging/windows/build.sh "$VERSION" dist
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: windows
           path: dist/*-setup.exe
+
+  # A published release gets the packages that were built. The only job
+  # that can write to the repository: it builds nothing and runs nothing
+  # from the build, the packages are data to it. A package whose job did
+  # not succeed is not attached and fails this job, after the others are
+  # attached. For macOS that job is macos-verify: the .dmg is an artifact
+  # from macos-sign on, and one that did not verify stays off the release.
+  attach:
+    if: ${{ !cancelled() && github.event_name == 'release' }}
+    needs: [macos-verify, linux, windows]
+    runs-on: ubuntu-24.04
+    permissions:
+      actions: read
+      contents: write
+    steps:
+      - env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.event.release.tag_name }}
+          MACOS: ${{ needs.macos-verify.result }}
+          LINUX: ${{ needs.linux.result }}
+          WINDOWS: ${{ needs.windows.result }}
+        run: |
+          set -euo pipefail
+          mkdir dist
+          missing=0
+          for package in "macos $MACOS" "linux $LINUX" "windows $WINDOWS"; do
+            name=${package% *}
+            result=${package#* }
+            if [ "$result" != success ]; then
+              echo "::error::the $name package is not attached: its job ended with $result"
+              missing=1
+            elif ! gh run download "$GITHUB_RUN_ID" --repo "$GITHUB_REPOSITORY" --name "$name" --dir dist; then
+              echo "::error::no $name package in this run"
+              missing=1
+            fi
+          done
+          cd dist
+          for file in *; do
+            [ -f "$file" ] || continue
+            sha256sum "$file" > "$file.sha256"
+          done
+          ls -l
+          if [ -n "$(ls)" ]; then
+            gh release upload "$TAG" --repo "$GITHUB_REPOSITORY" --clobber ./*
+          fi
+          exit "$missing"

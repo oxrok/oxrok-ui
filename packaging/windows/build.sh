@@ -1,9 +1,10 @@
 #!/bin/sh
 # 22 Packaging (Windows): stages the app with its DLLs, decoders and
 # firmware, then builds the installer. Runs in an MSYS2 MINGW64 shell with
-# mingw-w64-x86_64-{libsigrokdecode} (for the Python decoder files), a C
-# compiler for the MinGW runtime and a Rust toolchain for
-# x86_64-pc-windows-gnu.
+# a C compiler for the MinGW runtime and a Rust toolchain for
+# x86_64-pc-windows-gnu. DECODERS is the decoders directory of a
+# libsigrokdecode release (the Python decoder files), which MSYS2 does not
+# package; without it, the one of an installation under /mingw64.
 #
 #   packaging/windows/build.sh 0.11.0 dist
 #
@@ -26,7 +27,9 @@ ldd "$EXE" | awk '/\/mingw64\//{print $3}' | sort -u | while read -r dll; do
     cp "$dll" "$STAGE/bin/"
 done
 
-cp -r /mingw64/share/libsigrokdecode/decoders "$SHARE/decoders"
+DECODERS=${DECODERS:-/mingw64/share/libsigrokdecode/decoders}
+[ -d "$DECODERS" ] || { echo "no decoders in $DECODERS: set DECODERS" >&2; exit 1; }
+cp -r "$DECODERS" "$SHARE/decoders"
 mkdir -p "$SHARE/sigrok-firmware"
 [ -d /mingw64/share/sigrok-firmware ] && cp -r /mingw64/share/sigrok-firmware/. "$SHARE/sigrok-firmware/"
 [ -d vendor/sigrok-firmware ] && cp -r vendor/sigrok-firmware/. "$SHARE/sigrok-firmware/"
@@ -34,4 +37,5 @@ mkdir -p "$SHARE/sigrok-firmware"
 "$STAGE/bin/oxrok-ui.exe" --self-test
 
 # The installer (Inno Setup's iscc on PATH).
-iscc //DVersion="$VERSION" //DStage="$(cygpath -w "$STAGE")" //O"$(cygpath -w "$OUT")" packaging/windows/installer.iss
+# Absolute paths: iscc reads a relative one from the script's directory.
+iscc //DVersion="$VERSION" //DStage="$(cygpath -aw "$STAGE")" //O"$(cygpath -aw "$OUT")" packaging/windows/installer.iss

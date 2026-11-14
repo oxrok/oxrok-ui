@@ -9,7 +9,7 @@ use oxrok_ui::app::{AppOptions, LaApp};
 use oxrok_ui::backend::{MockBackend, MockOptions, Streaming};
 use oxrok_ui::core::capture::{CaptureMode, CaptureState};
 use oxrok_ui::core::markers::TimeOrigin;
-use oxrok_ui::core::trigger::Match;
+use oxrok_ui::core::trigger::{DigitalTrigger, Match};
 use oxrok_ui::core::{CaptureTime, ChannelId, ManualClock};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
@@ -89,7 +89,13 @@ impl Rig {
         self.h.run_steps(3);
     }
 
-    /// Scrolls a control of the Device Settings panel into view and clicks it.
+    /// Opens the Inspector's Trigger tab.
+    fn trigger_tab(&mut self) {
+        self.h.key_press_modifiers(Modifiers::ALT, Key::Num2);
+        self.h.run_steps(3);
+    }
+
+    /// Scrolls a control of the Inspector into view and clicks it.
     fn click_in_panel(&mut self, role: egui::Role, label: &str) {
         self.h.get_by_role_and_label(role, label).scroll_to_me();
         self.h.run_steps(3);
@@ -117,6 +123,9 @@ fn trigger_mode() {
     let s = r.h.state().session().unwrap();
     assert_eq!(s.settings.mode, CaptureMode::Triggered);
     assert_eq!(s.settings.trigger.get(0, D0), Some(Match::Rising), "the lowest enabled channel");
+    // The Device tab has the device's settings; the trigger has its own tab.
+    assert!(r.h.query_by_label("Capture duration after trigger").is_none());
+    r.trigger_tab();
     r.type_time("Capture duration after trigger", "100ms");
     assert!((r.h.state().session().unwrap().settings.trigger.post_trigger_seconds - 0.1).abs() < 1e-12);
     r.record_until_done();
@@ -132,7 +141,7 @@ fn trigger_mode() {
     assert!((RATE / 10..RATE / 10 + RATE / 5).contains(&post), "stopped about 0.1 s after: {post}");
     let s = r.h.state().session().unwrap();
     // The flag: centered after the capture.
-    r.h.get_by_role_and_label(egui::Role::Button, "Trigger");
+    r.h.get_by_role_and_label(egui::Role::Button, "Trigger point");
     let center = s.view.state().center_time();
     assert!((center.secs_since(t)).abs() < 1e-9, "centered on the trigger");
 }
@@ -199,19 +208,60 @@ fn start_failure() {
     assert_eq!(r.state(), CaptureState::Empty);
 }
 
+/// A device may round the sample rate, and a pulse width may have no
+/// whole sample in it at the rate it took: the capture does not begin
+/// without its trigger, and the reason has the rate.
+#[test]
+fn a_trigger_the_applied_rate_cannot_take() {
+    use oxrok_ui::backend::{HwTriggerCaps, TriggerMatch};
+    // Two stages, which only the device's own trigger takes.
+    let hw_trigger = Some(HwTriggerCaps {
+        matches: vec![TriggerMatch::Rising, TriggerMatch::Falling],
+        capture_ratio: true,
+        pulse: true,
+        duration: true,
+        holdoff: true,
+        ..HwTriggerCaps::default()
+    });
+    let mut r = Rig::new(MockOptions { hw_trigger, ..MockOptions::default() });
+    pick_mode(&mut r.h, "Trigger");
+    r.h.run_steps(3);
+    {
+        let s = r.h.state_mut().session_mut().unwrap();
+        // One sample at 3 MS/s, which the mock has not: it takes 2 or
+        // 4 MS/s, and a third of a microsecond is no sample of either.
+        s.settings.sample_rate = 3_000_000;
+        let mut t = DigitalTrigger::pulse(D0, true, 1.0 / 3e6, 1.0 / 3e6);
+        let [b, _] = DigitalTrigger::on(ChannelId::digital(1), Match::Rising).stages;
+        t.stages[1] = b;
+        s.settings.trigger = t;
+    }
+    r.h.run_steps(2);
+    assert_eq!(r.h.state().capture_blocked(), None, "fine at the rate asked for");
+    r.h.key_press(Key::Space);
+    r.until(|a| a.toasts().iter().any(|t| t.heading.as_deref() == Some("Could not begin the capture.")));
+    assert_eq!(r.state(), CaptureState::Empty);
+    let toasts = r.h.state().toasts();
+    let t = toasts.iter().find(|t| t.heading.as_deref() == Some("Could not begin the capture.")).unwrap();
+    assert!(t.body.starts_with("No whole number of samples fits the duration at this sample rate."), "{}", t.body);
+    assert!(t.body.contains("Sample rate adjusted to"), "{}", t.body);
+    // Not the hints for what a device refuses.
+    assert_eq!(t.body.lines().count(), 2, "{}", t.body);
+}
+
 /// "Capture duration before trigger" is kept before the trigger on a
 /// streaming device and on a buffered one.
 #[test]
 fn pre_trigger_duration_on_buffered_devices() {
     let mut r = Rig::new(MockOptions::default());
     pick_mode(&mut r.h, "Trigger");
-    r.h.run_steps(3);
+    r.trigger_tab();
     // A streaming device has it too: the trigger is looked for after it.
     assert!(r.h.query_all_by_label("Capture duration before trigger").next().is_some());
 
     let mut r = Rig::new(MockOptions { buffered: Some(1 << 30), ..MockOptions::default() });
     pick_mode(&mut r.h, "Trigger");
-    r.h.run_steps(3);
+    r.trigger_tab();
     r.type_time("Capture duration before trigger", "20ms");
     r.type_time("Capture duration after trigger", "80ms");
     let t = &r.h.state().session().unwrap().settings.trigger;

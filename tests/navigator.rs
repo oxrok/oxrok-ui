@@ -380,20 +380,20 @@ fn shift_arrow_pans_a_page() {
     assert!((moved - width).abs() < width * 0.01, "{moved} vs {width}");
 }
 
-/// Alt+2 opens the Inspector on the Analyzers tab; Alt+4
+/// Alt+3 opens the Inspector on the Analyzers tab; Alt+5
 /// switches to the Markers tab; again it stays open on that tab.
 #[test]
 fn alt_number_opens_panels() {
     let mut r = Rig::with_capture(0.0, 1);
     let tab = |r: &Rig| r.h.state().settings().inspector.tab.clone();
-    r.h.key_press_modifiers(Modifiers::ALT, Key::Num2);
+    r.h.key_press_modifiers(Modifiers::ALT, Key::Num3);
     r.h.run();
     assert_eq!(tab(&r), "analyzers");
     assert!(r.h.state().settings().inspector.open);
-    r.h.key_press_modifiers(Modifiers::ALT, Key::Num4);
+    r.h.key_press_modifiers(Modifiers::ALT, Key::Num5);
     r.h.run();
     assert_eq!(tab(&r), "markers");
-    r.h.key_press_modifiers(Modifiers::ALT, Key::Num4);
+    r.h.key_press_modifiers(Modifiers::ALT, Key::Num5);
     r.h.run();
     assert!(r.h.state().settings().inspector.open, "the tab key opens, it doesn't toggle");
     assert_eq!(tab(&r), "markers");

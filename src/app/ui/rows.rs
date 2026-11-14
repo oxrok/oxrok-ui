@@ -522,8 +522,8 @@ impl LaApp {
         if let Some((ch, stage)) = cycle_trigger {
             self.cycle_trigger(ch, stage);
         }
-        if trigger_details.is_some() {
-            self.ui.trigger_details = trigger_details;
+        if let Some(stage) = trigger_details {
+            self.show_trigger_tab(stage);
         }
         if let Some(id) = start_rename {
             self.start_rename(id);

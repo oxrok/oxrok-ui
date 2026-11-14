@@ -1,8 +1,9 @@
-//! The trigger on the channel rows: an icon per stage at the right of
-//! each digital row's label, the stage letters above them, and the
-//! Trigger Details dialog.
+//! The trigger: an icon per stage at the right of each digital row's
+//! label, the stage letters above them, and the Inspector's Trigger tab.
 
-use super::graph::Layout;
+use super::graph::{Layout, mode_name};
+use super::hint;
+use super::inspector::divider;
 use crate::app::LaApp;
 use crate::app::trigger::{self, TriggerError};
 use crate::backend::HwTriggerCaps;
@@ -10,12 +11,13 @@ use crate::core::capture::CaptureMode;
 use crate::core::trigger::{Combine, DigitalTrigger, Hold, Match, Stage, StageCount, ValueRange};
 use crate::core::{ChannelId, ChannelKind};
 use crate::l10n::tr;
-use crate::ui::theme::{Theme, ThemeExt};
+use crate::ui::theme::ThemeExt;
 use crate::ui::typography::Text;
-use crate::ui::widgets::{Button, Checkbox, Dropdown, number_input, time_input};
+use crate::ui::widgets::{Button, Checkbox, Dropdown, number_input, time_input, whole_input};
 use crate::ui::{Token, icons};
-use egui::{Align2, Color32, Context, Id, Modal, Painter, Rect, Role, Sense, Ui, WidgetInfo, pos2, vec2};
+use egui::{Align2, Color32, Painter, Rect, Role, Sense, Ui, WidgetInfo, pos2, vec2};
 
+pub(crate) const TRIGGER_PANEL: &str = "trigger";
 /// One trigger icon's cell.
 pub(crate) const CELL: f32 = 18.0;
 /// Between the icons and the plot.
@@ -145,7 +147,7 @@ pub(crate) fn stage_summary(stage: &Stage, name: &dyn Fn(ChannelId) -> String) -
 /// Returns whether the selection changed.
 fn choice(ui: &mut Ui, label: &str, options: &[(&str, Option<String>)], selected: &mut usize) -> bool {
     let mut changed = false;
-    ui.horizontal(|ui| {
+    ui.horizontal_wrapped(|ui| {
         for (k, (text, why)) in options.iter().enumerate() {
             let on = *selected == k;
             // What is on can always be seen and left.
@@ -237,8 +239,10 @@ impl LaApp {
         let (mut cycle, mut details) = (None, None);
         for (ch, ident, k, cell) in cells {
             let stage = &cols.trigger.stages[*k];
-            let sense = if cols.locked.is_some() { Sense::hover() } else { Sense::click() };
-            let resp = ui.interact(cell.intersect(clip), ui.make_persistent_id(("trigger_cell", *ch, *k)), sense);
+            // A locked cell takes the click for its details: those of a
+            // recorded trigger are read there.
+            let resp =
+                ui.interact(cell.intersect(clip), ui.make_persistent_id(("trigger_cell", *ch, *k)), Sense::click());
             let name = cols.name(*k, ident);
             let (icon, state) = glyph(stage, *ch);
             let set = stage.get(*ch).is_some() || in_range(stage, *ch);
@@ -263,12 +267,12 @@ impl LaApp {
             let extras = set && (stage.count.is_some() || stage.hold.is_some() || stage.range.is_some());
             paint_icon(painter, *cell, icon, ink, letter, extras);
             let hint = match (cols.locked, &cols.error) {
-                (Some(why), _) => why.to_owned(),
+                (Some(why), _) => format!("{why}\n{}", tr("Right-click for details.")),
                 (None, Some(e)) if set => e.clone(),
                 (None, _) => tr("Click to change, right-click for details.").to_owned(),
             };
             let resp = resp.on_hover_text(format!("{name}: {state}\n{hint}"));
-            if resp.clicked() {
+            if resp.clicked() && enabled {
                 cycle = Some((*ch, *k));
             }
             if resp.secondary_clicked() {
@@ -305,7 +309,7 @@ impl LaApp {
                 theme.color(token),
             );
             if resp.on_hover_text(label.clone()).clicked() {
-                self.ui.trigger_details = Some(k);
+                self.show_trigger_tab(k);
             }
         }
     }
@@ -326,23 +330,58 @@ impl LaApp {
         self.mark_settings_dirty();
     }
 
-    /// Trigger Details: what a stage has beyond its conditions, and how
-    /// two stages combine. What the device cannot do is disabled and
-    /// says why.
-    pub(crate) fn trigger_details_dialog(&mut self, ctx: &Context) {
-        let Some(mut k) = self.ui.trigger_details else { return };
-        let Some(s) = self.session.as_ref() else {
-            self.ui.trigger_details = None;
+    /// Opens the Inspector on the Trigger tab, on `stage`.
+    pub(crate) fn show_trigger_tab(&mut self, stage: usize) {
+        self.ui.trigger_stage = stage;
+        self.toggle_panel(TRIGGER_PANEL);
+    }
+
+    /// The Trigger tab's header: Reset.
+    pub(crate) fn trigger_panel_actions(&mut self, ui: &mut Ui) {
+        let Some(s) = self.session.as_mut() else { return };
+        let locked = s.is_read_only() || s.state.is_busy() || s.caps.is_none();
+        let reset = ui.add_enabled(!locked, Button::tertiary(tr("Reset")));
+        if reset.on_hover_text(tr("Restore the default trigger")).clicked() {
+            s.settings.trigger = DigitalTrigger::reset(&s.settings.enabled);
+            self.mark_settings_dirty();
+        }
+    }
+
+    /// The Trigger tab: the trigger in words, how long the capture is
+    /// around it, what a stage has beyond its conditions, and how two
+    /// stages combine. What the device cannot do is disabled and says
+    /// why.
+    pub(crate) fn trigger_panel(&mut self, ui: &mut Ui) {
+        let theme = ui.la_theme();
+        let Some(s) = self.session.as_ref() else { return };
+        if let Some(err) = &s.open_error {
+            note(ui, err, Token::Alert);
             return;
-        };
+        }
+        // A loaded file shows the trigger it was recorded with, read-only.
         let read_only = s.is_read_only();
-        let locked = read_only || s.state.is_busy() || s.caps.is_none();
+        if s.caps.is_none() && !read_only {
+            hint(ui, tr("Opening device…"));
+            return;
+        }
+        let recorded = s.snapshot.as_ref().and_then(|snap| snap.trigger.clone());
+        let mut t = match (read_only, recorded) {
+            (false, _) => s.settings.trigger.clone(),
+            (true, Some(t)) => t,
+            (true, None) => {
+                hint(ui, tr("This capture was recorded without a trigger."));
+                return;
+            }
+        };
+        let before = t.clone();
+        let busy = s.state.is_busy();
+        let locked = read_only || busy;
         let caps = s.caps.clone();
         let hw = caps.as_ref().and_then(|c| c.hw_trigger.as_ref());
-        let recorded = s.snapshot.as_ref().and_then(|snap| snap.trigger.clone());
-        let mut t = if read_only { recorded.unwrap_or_default() } else { s.settings.trigger.clone() };
-        let before = t.clone();
         let rate = s.settings.sample_rate;
+        let mode = s.settings.mode;
+        let armed = read_only || mode == CaptureMode::Triggered;
+        let any_digital = s.settings.enabled.iter().any(|c| c.kind == ChannelKind::Digital);
         // The enabled digital channels, in the device's order.
         let mut channels: Vec<(ChannelId, String)> = s
             .rows
@@ -354,90 +393,136 @@ impl LaApp {
         let idents: Vec<(ChannelId, String)> = s.rows.iter().map(|r| (r.channel, r.identifier())).collect();
         let name = move |c: ChannelId| idents.iter().find(|x| x.0 == c).map_or_else(|| c.short_name(), |x| x.1.clone());
         let stages = trigger::stages(hw).max(t.stages.iter().rposition(|s| !s.is_empty()).map_or(0, |n| n + 1));
-        k = k.min(1);
-        let theme = ctx.la_theme();
-        let mut close = false;
-        let resp = Modal::new(Id::unique("trigger_details")).frame(super::dialogs::modal_frame(ctx)).show(ctx, |ui| {
-            ui.set_width(440.0);
-            super::help::title_row(ui, tr("Trigger Details"), &mut close);
+        let mut k = if stages > 1 { self.ui.trigger_stage.min(1) } else { 0 };
+        // A device that waits for the trigger keeps only the pre-trigger
+        // time before it; one the app scans keeps it all.
+        let pre_help = if !caps.as_ref().is_some_and(|c| c.supports_continuous) {
+            tr(
+                "This device records into its own memory, so it keeps only this much data before the trigger. Long durations use more device memory; with RLE the result can be longer.",
+            )
+        } else if crate::app::waits_in_device(&t, caps.as_ref(), rate) {
+            tr("The device waits for this trigger itself, so the capture keeps only this much data before it.")
+        } else {
+            tr(
+                "The trigger is looked for after this much data, so that it is there before the trigger. The capture keeps everything since Start that fits the memory buffer.",
+            )
+        };
+
+        // Why the trigger cannot be changed, or is not used.
+        let mut use_trigger_mode = false;
+        if read_only {
+            hint(ui, tr("The trigger this capture was recorded with."));
+            ui.add_space(12.0);
+        } else if busy {
+            hint(ui, tr("Stop the capture to change the trigger."));
+            ui.add_space(12.0);
+        } else if !armed {
+            hint(ui, &tr("The capture mode is {}, so this trigger is not used.").replacen("{}", mode_name(mode), 1));
+            ui.add_space(6.0);
+            let r = ui
+                .add_enabled(any_digital, Button::secondary(tr("Use Trigger Mode")))
+                .on_disabled_hover_text(tr("Enable a digital channel first."));
+            use_trigger_mode = r.clicked();
             ui.add_space(14.0);
-            ui.add_enabled_ui(!locked, |ui| {
-                // The stage, where there are two.
-                if stages > 1 || hw.is_none() {
-                    let b = lacking(hw, |c| c.stages() > 1, TriggerError::Stages).filter(|_| stages < 2);
-                    choice(ui, tr("Stage"), &[(tr("Stage A"), None), (tr("Stage B"), b)], &mut k);
-                    ui.add_space(10.0);
-                }
-                let summary = stage_summary(&t.stages[k], &name);
-                if t.stages[k].conditions.is_empty() {
-                    note(ui, tr("No condition yet: click a channel's trigger icon to set one."), Token::Ink3);
-                } else {
-                    note(ui, &summary, Token::Ink2);
-                }
-                ui.add_space(14.0);
-                stage_extras(ui, &mut t.stages[k], hw, &channels, &theme);
-                // How the two stages combine.
+        }
+        // The trigger in words: a line per stage.
+        let shown = if stages > 1 { stages } else { usize::from(!t.stages[0].is_empty()) };
+        for (letter, stage) in STAGE_LETTERS.iter().zip(&t.stages).take(shown) {
+            ui.horizontal_wrapped(|ui| {
                 if stages > 1 {
-                    ui.add_space(16.0);
-                    caption(ui, tr("Stages A and B"));
-                    ui.add_space(6.0);
-                    let both = t.stages.iter().all(|s| !s.is_empty());
-                    let need_both = (!both).then(|| tr("Set a condition in both stages first.").to_owned());
-                    let or = need_both.clone().or_else(|| lacking(hw, |c| c.or, TriggerError::Or));
-                    let and = need_both.clone().or_else(|| lacking(hw, |c| c.and, TriggerError::And));
-                    let mut c = match t.combine {
-                        Combine::Then => 0,
-                        Combine::Or => 1,
-                        Combine::And => 2,
-                    };
-                    let options = [(tr("A, then B"), need_both), (tr("A or B"), or), (tr("A and B"), and)];
-                    if choice(ui, tr("Stages A and B"), &options, &mut c) {
-                        t.combine = [Combine::Then, Combine::Or, Combine::And][c];
-                    }
+                    let letter = egui::RichText::new(*letter).text_style(Text::ValueS.style());
+                    ui.label(letter.color(theme.color(Token::Ink3)));
+                }
+                let text = stage_summary(stage, &name);
+                if text.is_empty() {
+                    note(ui, tr("No condition"), Token::Ink4);
+                } else {
+                    note(ui, &text, Token::Ink2);
                 }
             });
-            ui.add_space(16.0);
-            // What looks for the trigger, or why nothing can.
-            if !read_only && !t.is_empty() {
-                match crate::app::plan_trigger(&t, caps.as_ref(), 0, rate) {
-                    Ok(e) if e.device().is_some() => note(ui, tr("The device waits for this trigger."), Token::Ink3),
-                    Ok(_) => note(ui, tr("The app looks for this trigger in the data."), Token::Ink3),
-                    Err(e) => note(ui, &e.text(), Token::Alert),
-                }
-                ui.add_space(12.0);
+        }
+        // What looks for the trigger, or why nothing can.
+        let planned = !read_only && (armed || !t.is_empty());
+        if planned {
+            match crate::app::plan_trigger(&t, caps.as_ref(), 0, rate) {
+                Ok(e) if e.device().is_some() => note(ui, tr("The device waits for this trigger."), Token::Ink3),
+                Ok(_) => note(ui, tr("The app looks for this trigger in the data."), Token::Ink3),
+                Err(e) => note(ui, &e.text(), Token::Alert),
             }
+        }
+        if planned || shown > 0 {
+            ui.add_space(20.0);
+            divider(ui);
+        }
+        ui.add_enabled_ui(!locked, |ui| {
             ui.horizontal(|ui| {
-                let clear =
-                    ui.add_enabled(!locked && t.stages[k] != Stage::default(), Button::secondary(tr("Clear Stage")));
-                if clear.clicked() {
-                    t.stages[k] = Stage::default();
-                }
-                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                    if ui.add(Button::primary(tr("Done")).min_width(96.0)).clicked() {
-                        close = true;
-                    }
-                });
+                caption(ui, tr("Capture duration before trigger"));
+                super::panels::help_icon(ui, pre_help);
             });
+            ui.add_space(6.0);
+            time_input(ui, tr("Capture duration before trigger"), &mut t.pre_trigger_seconds, 0.0);
+            ui.add_space(10.0);
+            caption(ui, tr("Capture duration after trigger"));
+            ui.add_space(6.0);
+            time_input(ui, tr("Capture duration after trigger"), &mut t.post_trigger_seconds, 0.0);
+            ui.add_space(20.0);
+            divider(ui);
+            // The stage, where there are two.
+            if stages > 1 || hw.is_none() {
+                let b = lacking(hw, |c| c.stages() > 1, TriggerError::Stages).filter(|_| stages < 2);
+                choice(ui, tr("Stage"), &[(tr("Stage A"), None), (tr("Stage B"), b)], &mut k);
+                ui.add_space(10.0);
+            }
+            if t.stages[k].conditions.is_empty() {
+                note(ui, tr("No condition yet: click a channel's trigger icon to set one."), Token::Ink3);
+                ui.add_space(14.0);
+            }
+            stage_extras(ui, &mut t.stages[k], hw, &channels);
+            ui.add_space(16.0);
+            let clear = ui.add_enabled(t.stages[k] != Stage::default(), Button::secondary(tr("Clear Stage")));
+            if clear.clicked() {
+                t.stages[k] = Stage::default();
+            }
+            // How the two stages combine.
+            if stages > 1 {
+                ui.add_space(20.0);
+                caption(ui, tr("Stages A and B"));
+                ui.add_space(6.0);
+                let both = t.stages.iter().all(|s| !s.is_empty());
+                let need_both = (!both).then(|| tr("Set a condition in both stages first.").to_owned());
+                let or = need_both.clone().or_else(|| lacking(hw, |c| c.or, TriggerError::Or));
+                let and = need_both.clone().or_else(|| lacking(hw, |c| c.and, TriggerError::And));
+                let mut c = match t.combine {
+                    Combine::Then => 0,
+                    Combine::Or => 1,
+                    Combine::And => 2,
+                };
+                let options = [(tr("A, then B"), need_both), (tr("A or B"), or), (tr("A and B"), and)];
+                if choice(ui, tr("Stages A and B"), &options, &mut c) {
+                    t.combine = [Combine::Then, Combine::Or, Combine::And][c];
+                }
+            }
         });
-        self.ui.trigger_details = (!close && !resp.should_close()).then_some(k);
+        self.ui.trigger_stage = k;
         if !read_only && t != before {
             if let Some(s) = self.session.as_mut() {
                 s.settings.trigger = t;
             }
             self.mark_settings_dirty();
         }
+        if use_trigger_mode {
+            self.set_capture_mode(CaptureMode::Triggered);
+        }
     }
 }
 
 /// A stage's count, duration or pulse width, and value range.
-fn stage_extras(
-    ui: &mut Ui,
-    stage: &mut Stage,
-    hw: Option<&HwTriggerCaps>,
-    channels: &[(ChannelId, String)],
-    theme: &Theme,
-) {
+fn stage_extras(ui: &mut Ui, stage: &mut Stage, hw: Option<&HwTriggerCaps>, channels: &[(ChannelId, String)]) {
     let has_edge = stage.has_edge();
+    // Two inputs side by side, with a dash between them, fit the panel
+    // at its narrowest.
+    let half = ((ui.available_width() - 24.0) / 2.0).max(60.0);
+    let (input_w, dropdown_w) = (half.min(130.0), half.min(170.0));
     // ---- count ----
     let mut counted = stage.count.is_some();
     let why = lacking(hw, |c| c.count, TriggerError::Count).filter(|_| !counted);
@@ -498,13 +583,13 @@ fn stage_extras(
         let mut changed = choice(ui, label, &options, &mut kind);
         ui.add_space(6.0);
         ui.horizontal(|ui| {
-            ui.allocate_ui(vec2(130.0, 40.0), |ui| {
+            ui.allocate_ui(vec2(input_w, 40.0), |ui| {
                 let name = if kind == 2 { tr("Pulse width minimum") } else { tr("Duration") };
                 changed |= time_input(ui, name, &mut a, 0.0);
             });
             if kind == 2 {
                 ui.label("–");
-                ui.allocate_ui(vec2(130.0, 40.0), |ui| {
+                ui.allocate_ui(vec2(input_w, 40.0), |ui| {
                     changed |= time_input(ui, tr("Pulse width maximum"), &mut b, 0.0);
                 });
             }
@@ -546,11 +631,11 @@ fn stage_extras(
         let (mut first, mut last) = (at(r.channels.first()), at(r.channels.last()));
         let mut changed = false;
         ui.horizontal(|ui| {
-            ui.allocate_ui(vec2(170.0, 40.0), |ui| {
+            ui.allocate_ui(vec2(dropdown_w, 40.0), |ui| {
                 changed |= ui.add(Dropdown::new(tr("Least significant channel"), &mut first, &names)).changed();
             });
             ui.label("–");
-            ui.allocate_ui(vec2(170.0, 40.0), |ui| {
+            ui.allocate_ui(vec2(dropdown_w, 40.0), |ui| {
                 changed |= ui.add(Dropdown::new(tr("Most significant channel"), &mut last, &names)).changed();
             });
         });
@@ -569,25 +654,19 @@ fn stage_extras(
         }
         ui.add_space(6.0);
         ui.horizontal(|ui| {
-            let (mut lo, mut hi) = (r.low as f64, r.high as f64);
-            let bounds = Some((0.0, max as f64, 1.0));
-            ui.allocate_ui(vec2(130.0, 40.0), |ui| {
-                if number_input(ui, tr("Lowest value"), &mut lo, "", bounds) {
-                    r.low = lo as u64;
+            ui.allocate_ui(vec2(input_w, 40.0), |ui| {
+                if whole_input(ui, tr("Lowest value"), &mut r.low, max) {
                     r.high = r.high.max(r.low);
                 }
             });
             ui.label("–");
-            ui.allocate_ui(vec2(130.0, 40.0), |ui| {
-                if number_input(ui, tr("Highest value"), &mut hi, "", bounds) {
-                    r.high = hi as u64;
+            ui.allocate_ui(vec2(input_w, 40.0), |ui| {
+                if whole_input(ui, tr("Highest value"), &mut r.high, max) {
                     r.low = r.low.min(r.high);
                 }
             });
-            ui.label(
-                egui::RichText::new(tr("of 0–{}").replacen("{}", &max.to_string(), 1)).color(theme.color(Token::Ink3)),
-            );
         });
+        note(ui, &tr("of 0–{}").replacen("{}", &max.to_string(), 1), Token::Ink3);
     }
 }
 

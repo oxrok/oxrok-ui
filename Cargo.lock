@@ -3511,9 +3511,9 @@ dependencies = [
 
 [[package]]
 name = "oxrok"
-version = "0.3.0-alpha.1"
+version = "0.3.0-alpha.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f5ec9bd80ffd5bf5997371dda5289fea8ab882b3a3c9d91a4fef3165752bd9ac"
+checksum = "e631d89c012124a14fe9f4706a41a4030f2c44e99fd563ab0d0cbbd871c5f461"
 dependencies = [
  "aes",
  "async-hid",
@@ -3535,6 +3535,7 @@ dependencies = [
  "rustpython-ruff_text_size",
  "rustpython-stdlib",
  "rustpython-vm",
+ "serde_json",
  "serialport",
  "sha2 0.10.9",
  "socket2",

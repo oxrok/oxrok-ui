@@ -92,7 +92,7 @@ fn channel_ids(channels: &[Channel]) -> Vec<(usize, ChannelInfo)> {
     let (mut d, mut a) = (0u16, 0u16);
     channels
         .iter()
-        .map(|c| {
+        .filter_map(|c| {
             let id = match c.kind {
                 ChannelKind::Logic => {
                     d += 1;
@@ -102,8 +102,11 @@ fn channel_ids(channels: &[Channel]) -> Vec<(usize, ChannelInfo)> {
                     a += 1;
                     ChannelId::analog(a - 1)
                 }
+                // A kind of channel a later oxrok adds: the app has no
+                // trace for it.
+                _ => return None,
             };
-            (c.index, ChannelInfo { id, device_name: c.name.clone() })
+            Some((c.index, ChannelInfo { id, device_name: c.name.clone() }))
         })
         .collect()
 }
@@ -192,6 +195,8 @@ impl Feed {
                 self.sink.on_end(reason);
                 self.ended = true;
             }
+            // A kind of packet a later oxrok adds.
+            _ => {}
         }
     }
 

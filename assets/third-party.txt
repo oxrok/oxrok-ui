@@ -960,7 +960,7 @@ ordermap 1.2.2
 owned_ttf_parser 0.25.1
     License: Apache-2.0
     https://github.com/alexheretic/owned-ttf-parser
-oxrok 0.2.0
+oxrok 0.3.0-alpha.2
     License: GPL-3.0-or-later
     https://github.com/oxrok/oxrok
 oxrok-firmware-fetch 0.2.0

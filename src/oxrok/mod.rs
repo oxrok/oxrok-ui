@@ -51,7 +51,7 @@ fn channel_map(channels: &[oxrok::core::Channel]) -> Vec<(ChannelId, usize)> {
     channels
         .iter()
         .enumerate()
-        .map(|(pos, c)| {
+        .filter_map(|(pos, c)| {
             let id = match c.kind {
                 oxrok::core::ChannelKind::Logic => {
                     d += 1;
@@ -61,8 +61,11 @@ fn channel_map(channels: &[oxrok::core::Channel]) -> Vec<(ChannelId, usize)> {
                     a += 1;
                     ChannelId::analog(a - 1)
                 }
+                // A kind of channel a later oxrok adds: the app has no
+                // trace for it.
+                _ => return None,
             };
-            (id, pos)
+            Some((id, pos))
         })
         .collect()
 }
@@ -74,12 +77,9 @@ fn describe(driver: &str, dev: &dyn OxDevice, n: usize) -> DeviceInfo {
         .into_iter()
         .find(|s| !s.is_empty())
         .map_or(n.to_string(), str::to_owned);
-    let channels = dev
-        .channels()
-        .iter()
-        .zip(channel_map(dev.channels()))
-        .map(|(c, (id, _))| ChannelInfo { id, device_name: c.name.clone() })
-        .collect();
+    let all = dev.channels();
+    let channels =
+        channel_map(all).into_iter().map(|(id, pos)| ChannelInfo { id, device_name: all[pos].name.clone() }).collect();
     DeviceInfo {
         id: DeviceId::new(driver, &key),
         driver: driver.to_owned(),
@@ -775,6 +775,8 @@ fn feed(
                 ended = true;
                 break;
             }
+            // A kind of packet a later oxrok adds.
+            _ => {}
         }
     }
     send_header(&mut sink, &mut header);
@@ -959,6 +961,7 @@ mod tests {
             serial: serial.map(str::to_owned),
             manufacturer: None,
             product: None,
+            interface: None,
         };
         let ports = [
             port("/dev/cu.usbmodem11301", 0x2E8A, 0x000A, Some("E6625887D3405136")),
@@ -991,6 +994,7 @@ mod tests {
             serial: serial.map(str::to_owned),
             manufacturer: None,
             product: None,
+            interface: None,
         };
         let at = |ports: &[oxrok::serial::UsbPort], conn: &str| Conn {
             driver: "raspberrypi-pico".into(),
@@ -1026,6 +1030,7 @@ mod tests {
             serial: Some(serial.into()),
             manufacturer: None,
             product: None,
+            interface: None,
         };
         let backend = OxrokBackend::with_drivers(Some(vec!["demo".into()]));
         // Any device stands for a closed one: the demo's.

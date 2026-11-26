@@ -64,7 +64,8 @@ fn conf(v: &Value) -> Option<ConfValue> {
         Value::Rational(p, q) => ConfValue::Rational(*p, *q),
         Value::RangeU64(a, b) => ConfValue::UPair(*a, *b),
         Value::RangeF64(a, b) => ConfValue::Pair(*a, *b),
-        Value::KeyValue(..) | Value::Mq(..) => return None,
+        // Nor a kind of value a later oxrok adds.
+        Value::KeyValue(..) | Value::Mq(..) | _ => return None,
     })
 }
 
@@ -133,7 +134,8 @@ fn kind_from_list(list: &ValueList) -> OptionKind {
         ValueList::RangeF64(v) => OptionKind::Choice(v.iter().map(|(a, b)| ConfValue::Pair(*a, *b)).collect()),
         ValueList::RangeU64(v) if v.is_empty() => OptionKind::Free,
         ValueList::RangeU64(v) => OptionKind::Choice(v.iter().map(|(a, b)| ConfValue::UPair(*a, *b)).collect()),
-        ValueList::MinMaxU64(..) | ValueList::TriggerMatches(_) | ValueList::Mq(_) => OptionKind::Free,
+        // A kind of list a later oxrok adds is typed in, as these are.
+        ValueList::MinMaxU64(..) | ValueList::TriggerMatches(_) | ValueList::Mq(_) | _ => OptionKind::Free,
     }
 }
 

@@ -3,7 +3,7 @@
 A Rust/egui frontend for
 [oxrok](https://github.com/oxrok/oxrok): the capture, display,
 measurement and decoding UI for oxrok devices. Version `0.3.0-alpha.2`,
-built on oxrok `0.3.0-alpha.1`.
+built on oxrok `0.3.0-alpha.2`.
 
 ## Install
 
